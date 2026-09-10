@@ -1,0 +1,139 @@
+### Modulo projects — projetos, marcos, tarefas, comentarios e horas.
+@api = http://localhost:8000
+@token = SUBSTITUA_PELO_ACCESS_TOKEN
+@tenant = SUBSTITUA_PELO_ID_DO_TENANT
+
+### Criar projeto — sem code, ele e derivado do nome
+# @name projeto
+POST {{api}}/functions/v1/projects/projects
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{
+  "name": "Implantacao do PDV",
+  "code": "PDV",
+  "description": "Rollout em 12 lojas",
+  "startDate": "2026-09-01",
+  "dueDate": "2026-12-15",
+  "budgetCents": 18500000
+}
+
+###
+@project = {{projeto.response.body.data.id}}
+
+### Listar projetos
+GET {{api}}/functions/v1/projects/projects?status=active&search=pdv
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Ver o projeto com os marcos
+GET {{api}}/functions/v1/projects/projects/{{project}}
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Resumo: tarefas por situacao, marcos, horas apontadas e orcamento
+GET {{api}}/functions/v1/projects/projects/{{project}}/summary
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Alterar o projeto
+PATCH {{api}}/functions/v1/projects/projects/{{project}}
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "description": "Rollout em 15 lojas", "budgetCents": 21000000 }
+
+### Mudar a situacao (planning, active, on_hold, completed, archived)
+POST {{api}}/functions/v1/projects/projects/{{project}}/status
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "status": "active" }
+
+### Arquivar (a partir daqui o projeto nao aceita novas tarefas)
+POST {{api}}/functions/v1/projects/projects/{{project}}/archive
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{}
+
+### Adicionar marco
+POST {{api}}/functions/v1/projects/projects/{{project}}/milestones
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "name": "Piloto em uma loja", "dueDate": "2026-10-15" }
+
+### Criar tarefa — o responsavel precisa ser membro ativo do tenant
+# @name tarefa
+POST {{api}}/functions/v1/projects/tasks
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{
+  "projectId": "{{project}}",
+  "title": "Configurar impressoras fiscais",
+  "description": "Modelo Epson TM-T20",
+  "priority": "high",
+  "estimateMinutes": 240,
+  "dueDate": "2026-10-05"
+}
+
+###
+@task = {{tarefa.response.body.data.id}}
+
+### Criar subtarefa
+POST {{api}}/functions/v1/projects/tasks
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "projectId": "{{project}}", "title": "Testar impressao de cupom", "parentTaskId": "{{task}}" }
+
+### Listar tarefas
+GET {{api}}/functions/v1/projects/tasks?projectId={{project}}&status=todo
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Ver a tarefa com comentarios e apontamentos
+GET {{api}}/functions/v1/projects/tasks/{{task}}
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Atribuir (envie sem assigneeId para desatribuir)
+POST {{api}}/functions/v1/projects/tasks/{{task}}/assign
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "assigneeId": "UUID_DO_MEMBRO" }
+
+### Mudar a situacao — recusado enquanto houver subtarefa em aberto
+POST {{api}}/functions/v1/projects/tasks/{{task}}/status
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "status": "done" }
+
+### Comentar
+POST {{api}}/functions/v1/projects/tasks/{{task}}/comments
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "body": "Chegaram duas impressoras a menos; cobrei o fornecedor." }
+
+### Apontar horas (1 a 1440 minutos, nunca no futuro)
+POST {{api}}/functions/v1/projects/tasks/{{task}}/time-entries
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "minutes": 180, "spentOn": "2026-09-08", "notes": "Configuracao inicial" }

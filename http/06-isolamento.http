@@ -1,0 +1,39 @@
+### Prova de isolamento entre tenants.
+### Use o token de um usuario e o id do tenant de OUTRO: tudo deve dar 403.
+@api = http://localhost:8000
+@token = TOKEN_DO_USUARIO_B
+@tenantDeOutro = ID_DO_TENANT_DE_A
+
+### Leitura recusada
+GET {{api}}/functions/v1/crm/deals
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenantDeOutro}}
+
+### Leitura por id recusada
+GET {{api}}/functions/v1/crm/deals/ID_DE_UM_NEGOCIO_DE_A
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenantDeOutro}}
+
+### Escrita recusada
+PATCH {{api}}/functions/v1/crm/deals/ID_DE_UM_NEGOCIO_DE_A
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenantDeOutro}}
+Content-Type: application/json
+
+{ "title": "Invadido" }
+
+### Sem x-tenant-id nao ha tenant a autorizar
+GET {{api}}/functions/v1/crm/deals
+Authorization: Bearer {{token}}
+
+### Sem token, 401
+GET {{api}}/functions/v1/crm/deals
+
+### Confirmando pelo PostgREST: a RLS tambem vale fora das Edge Functions.
+### Mesmo indo direto na tabela, so voltam as linhas dos tenants em que o
+### usuario e membro.
+GET {{api}}/rest/v1/deals?select=id,title,tenant_id
+apikey: {{$dotenv ANON_KEY}}
+Authorization: Bearer {{token}}
+Accept-Profile: crm
+x-tenant-id: {{tenantDeOutro}}

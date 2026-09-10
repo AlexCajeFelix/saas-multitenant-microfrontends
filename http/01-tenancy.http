@@ -1,0 +1,83 @@
+### Modulo tenancy — tenants, membros e convites.
+### Requer @token e @tenant, obtidos em 00-auth.http.
+@api = http://localhost:8000
+@token = SUBSTITUA_PELO_ACCESS_TOKEN
+@tenant = SUBSTITUA_PELO_ID_DO_TENANT
+
+### Criar um tenant (nao envie x-tenant-id: ele ainda nao existe)
+POST {{api}}/functions/v1/tenancy/tenants
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "name": "Acme Industrias", "slug": "acme-industrias" }
+
+### Listar os tenants em que sou membro
+GET {{api}}/functions/v1/tenancy/tenants
+Authorization: Bearer {{token}}
+
+### Ver um tenant
+GET {{api}}/functions/v1/tenancy/tenants/{{tenant}}
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Alterar nome e configuracoes (mescla, nao substitui)
+PATCH {{api}}/functions/v1/tenancy/tenants/{{tenant}}
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "name": "Acme Industrias S.A.", "settings": { "timezone": "America/Sao_Paulo" } }
+
+### Suspender (escritas dos demais modulos passam a ser recusadas)
+POST {{api}}/functions/v1/tenancy/tenants/{{tenant}}/suspend
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "reason": "Pagamento em atraso" }
+
+### Reativar
+POST {{api}}/functions/v1/tenancy/tenants/{{tenant}}/activate
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{}
+
+### Listar membros
+GET {{api}}/functions/v1/tenancy/members?page=1&pageSize=25
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Convidar — o token do convite volta uma unica vez, nesta resposta
+POST {{api}}/functions/v1/tenancy/invitations
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "email": "bruno@acme.test", "role": "manager", "validForDays": 7 }
+
+### Listar convites
+GET {{api}}/functions/v1/tenancy/invitations
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Aceitar um convite (com o token de QUEM foi convidado, sem x-tenant-id)
+POST {{api}}/functions/v1/tenancy/invitations/accept
+Authorization: Bearer TOKEN_DO_CONVIDADO
+Content-Type: application/json
+
+{ "token": "TOKEN_DO_CONVITE" }
+
+### Trocar o papel de um membro
+PATCH {{api}}/functions/v1/tenancy/members/UUID_DO_USUARIO
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "role": "viewer" }
+
+### Remover um membro (o ultimo dono ativo nao pode ser removido)
+DELETE {{api}}/functions/v1/tenancy/members/UUID_DO_USUARIO
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}

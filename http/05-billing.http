@@ -1,0 +1,95 @@
+### Modulo billing — planos, assinatura, consumo e faturas.
+@api = http://localhost:8000
+@token = SUBSTITUA_PELO_ACCESS_TOKEN
+@tenant = SUBSTITUA_PELO_ID_DO_TENANT
+
+### Catalogo de planos
+GET {{api}}/functions/v1/billing/plans
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Assinatura vigente, com o consumo medido contra os limites do plano
+GET {{api}}/functions/v1/billing/subscriptions/current
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Assinar (recusado se o tenant ja tem assinatura vigente)
+POST {{api}}/functions/v1/billing/subscriptions
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "planCode": "starter" }
+
+### Trocar de plano — a resposta traz o rateio do periodo restante.
+### Descer de plano e recusado se o consumo atual nao couber nos novos limites.
+POST {{api}}/functions/v1/billing/subscriptions/change-plan
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "planCode": "pro" }
+
+### Cancelar ao fim do periodo, ou imediatamente com atPeriodEnd false
+POST {{api}}/functions/v1/billing/subscriptions/cancel
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "atPeriodEnd": true }
+
+### Registrar consumo. Com idempotencyKey, reenvios nao duplicam.
+POST {{api}}/functions/v1/billing/usage
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{
+  "metric": "api.calls",
+  "quantity": 1250,
+  "idempotencyKey": "lote-2026-09-09",
+  "metadata": { "origem": "gateway" }
+}
+
+### Consumo somado por metrica no periodo da assinatura
+GET {{api}}/functions/v1/billing/usage
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Emitir a fatura do periodo corrente
+# @name fatura
+POST {{api}}/functions/v1/billing/invoices
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "dueInDays": 10, "taxCents": 1495, "includeUsage": true }
+
+###
+@invoice = {{fatura.response.body.data.id}}
+
+### Listar faturas
+GET {{api}}/functions/v1/billing/invoices?status=open
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Ver a fatura com as linhas
+GET {{api}}/functions/v1/billing/invoices/{{invoice}}
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Liquidar (a segunda tentativa e recusada: fatura paga e imutavel)
+POST {{api}}/functions/v1/billing/invoices/{{invoice}}/pay
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{}
+
+### Cancelar a fatura
+POST {{api}}/functions/v1/billing/invoices/{{invoice}}/void
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{}

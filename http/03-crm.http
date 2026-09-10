@@ -1,0 +1,142 @@
+### Modulo crm — empresas, contatos, funil e negocios.
+@api = http://localhost:8000
+@token = SUBSTITUA_PELO_ACCESS_TOKEN
+@tenant = SUBSTITUA_PELO_ID_DO_TENANT
+
+### Criar empresa
+# @name empresa
+POST {{api}}/functions/v1/crm/companies
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{
+  "name": "Padaria Sol Nascente",
+  "domain": "solnascente.com.br",
+  "industry": "Alimentos",
+  "size": "11-50",
+  "phone": "+55 11 4002-8922"
+}
+
+###
+@company = {{empresa.response.body.data.id}}
+
+### Buscar empresas
+GET {{api}}/functions/v1/crm/companies?search=padaria&page=1&pageSize=25
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Ver, alterar e excluir uma empresa
+GET {{api}}/functions/v1/crm/companies/{{company}}
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+###
+PATCH {{api}}/functions/v1/crm/companies/{{company}}
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "industry": "Panificacao", "size": "51-200" }
+
+###
+DELETE {{api}}/functions/v1/crm/companies/{{company}}
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Criar contato
+# @name contato
+POST {{api}}/functions/v1/crm/contacts
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{
+  "firstName": "Marina",
+  "lastName": "Duarte",
+  "email": "marina@solnascente.com.br",
+  "jobTitle": "Proprietaria",
+  "companyId": "{{company}}"
+}
+
+###
+@contact = {{contato.response.body.data.id}}
+
+### Buscar contatos (procura em nome, sobrenome e e-mail)
+GET {{api}}/functions/v1/crm/contacts?search=marina
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Criar negocio — sem stageKey ele nasce no primeiro estagio do funil
+# @name negocio
+POST {{api}}/functions/v1/crm/deals
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{
+  "title": "Sistema de PDV",
+  "companyId": "{{company}}",
+  "contactId": "{{contact}}",
+  "amountCents": 1850000,
+  "currency": "BRL",
+  "expectedCloseDate": "2026-12-20"
+}
+
+###
+@deal = {{negocio.response.body.data.id}}
+
+### Listar negocios abertos de um estagio
+GET {{api}}/functions/v1/crm/deals?status=open&stageKey=proposal
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Ver o negocio com as atividades
+GET {{api}}/functions/v1/crm/deals/{{deal}}
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Mover de estagio (a probabilidade vem do estagio de destino)
+POST {{api}}/functions/v1/crm/deals/{{deal}}/stage
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "stageKey": "proposal" }
+
+### Recusado: won e lost sao estagios de fechamento
+POST {{api}}/functions/v1/crm/deals/{{deal}}/stage
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "stageKey": "won" }
+
+### Registrar atividade (call, email, meeting, note, task)
+POST {{api}}/functions/v1/crm/deals/{{deal}}/activities
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "kind": "meeting", "subject": "Demonstracao do produto", "notes": "Integracao fiscal aprovada" }
+
+### Ganhar
+POST {{api}}/functions/v1/crm/deals/{{deal}}/win
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{}
+
+### Perder (exige motivo)
+POST {{api}}/functions/v1/crm/deals/{{deal}}/lose
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "reason": "Preco acima do orcamento do cliente" }
+
+### Funil consolidado, com valor total e valor ponderado por estagio
+GET {{api}}/functions/v1/crm/pipeline
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}

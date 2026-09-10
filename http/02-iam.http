@@ -1,0 +1,93 @@
+### Modulo iam — permissoes, papeis, atribuicoes e chaves de API.
+@api = http://localhost:8000
+@token = SUBSTITUA_PELO_ACCESS_TOKEN
+@tenant = SUBSTITUA_PELO_ID_DO_TENANT
+
+### Quem sou eu neste tenant e o que posso fazer
+GET {{api}}/functions/v1/iam/whoami
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Catalogo de permissoes, agrupado por modulo
+GET {{api}}/functions/v1/iam/permissions
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Papeis visiveis: os de sistema e os criados por este tenant
+GET {{api}}/functions/v1/iam/roles
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Criar um papel proprio
+### Voce nao consegue conceder uma permissao que nao possui.
+POST {{api}}/functions/v1/iam/roles
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{
+  "slug": "vendedor",
+  "name": "Vendedor",
+  "description": "Opera apenas o funil de vendas",
+  "permissions": ["crm.deal.read", "crm.deal.write", "crm.contact.read", "crm.activity.write"]
+}
+
+### Ver um papel
+GET {{api}}/functions/v1/iam/roles/vendedor
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Alterar nome e trocar o conjunto inteiro de permissoes
+PATCH {{api}}/functions/v1/iam/roles/vendedor
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "name": "Vendedor Senior", "permissions": ["crm.deal.read", "crm.deal.write"] }
+
+### Conceder permissoes, preservando as demais
+POST {{api}}/functions/v1/iam/roles/vendedor/permissions
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "permissions": ["crm.company.read"] }
+
+### Revogar permissoes
+DELETE {{api}}/functions/v1/iam/roles/vendedor/permissions
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "permissions": ["crm.company.read"] }
+
+### Excluir um papel (recusado enquanto houver membro usando)
+DELETE {{api}}/functions/v1/iam/roles/vendedor
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Atribuir um papel a um membro
+POST {{api}}/functions/v1/iam/assignments
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "userId": "UUID_DO_USUARIO", "role": "vendedor" }
+
+### Emitir chave de API — o segredo aparece so nesta resposta
+POST {{api}}/functions/v1/iam/api-keys
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+Content-Type: application/json
+
+{ "name": "Integracao com o ERP", "scopes": ["crm.deal.read"], "expiresInDays": 365 }
+
+### Listar chaves
+GET {{api}}/functions/v1/iam/api-keys
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}
+
+### Revogar uma chave
+DELETE {{api}}/functions/v1/iam/api-keys/UUID_DA_CHAVE
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}

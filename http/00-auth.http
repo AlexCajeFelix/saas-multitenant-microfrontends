@@ -1,0 +1,44 @@
+### Variaveis compartilhadas por todos os arquivos desta pasta.
+### Rode as requisicoes desta pagina primeiro: elas produzem o token e o tenant.
+@api = http://localhost:8000
+@anonKey = {{$dotenv ANON_KEY}}
+@serviceKey = {{$dotenv SERVICE_ROLE_KEY}}
+@email = alice@acme.test
+@password = Password123!
+
+### Cadastro (o GoTrue local confirma o e-mail sozinho)
+POST {{api}}/auth/v1/signup
+apikey: {{anonKey}}
+Content-Type: application/json
+
+{ "email": "{{email}}", "password": "{{password}}" }
+
+### Login — guarde o access_token da resposta em @token
+# @name login
+POST {{api}}/auth/v1/token?grant_type=password
+apikey: {{anonKey}}
+Content-Type: application/json
+
+{ "email": "{{email}}", "password": "{{password}}" }
+
+###
+@token = {{login.response.body.access_token}}
+
+### Meus tenants — guarde o id em @tenant
+# @name meusTenants
+GET {{api}}/functions/v1/tenancy/tenants
+Authorization: Bearer {{token}}
+
+###
+@tenant = {{meusTenants.response.body.data.0.id}}
+
+### Saude de cada modulo (nao exige autenticacao)
+GET {{api}}/functions/v1/tenancy/health
+
+###
+GET {{api}}/functions/v1/crm/health
+
+### Lista de rotas de um modulo
+GET {{api}}/functions/v1/crm/
+Authorization: Bearer {{token}}
+x-tenant-id: {{tenant}}

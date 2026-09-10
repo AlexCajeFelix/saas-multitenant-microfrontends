@@ -1,0 +1,14 @@
+.env
+.env.local
+node_modules/
+.DS_Store
+volumes/
+*.log
+.deno_cache/
+
+# Frontend
+web/node_modules/
+web/dist/
+web/.env.local
+web/.env
+web/*.tsbuildinfo
