@@ -34,16 +34,16 @@ supabase() { pnpm exec supabase "$@"; }
 expected="$("$root/scripts/deploy/latest-migration.sh")"
 functions=(tenancy iam crm projects billing)
 
-if [[ "$mode" == "cli" ]]; then
-  echo "==> modo cli: aplicando migrations e funcoes pelo pipeline"
-  supabase link --project-ref "$ref" ${SUPABASE_DB_PASSWORD:+--password "$SUPABASE_DB_PASSWORD"} >/dev/null
-  supabase db push --linked --include-all
-  for fn in "${functions[@]}"; do
-    supabase functions deploy "$fn" --project-ref "$ref" --no-verify-jwt --use-api
-  done
-else
+#if [[ "$mode" == "cli" ]]; then
+  #echo "==> modo cli: aplicando migrations e funcoes pelo pipeline"
+  #supabase link --project-ref "$ref" ${SUPABASE_DB_PASSWORD:+--password "$SUPABASE_DB_PASSWORD"} >/dev/null
+  #supabase db push --linked --include-all
+  #for fn in "${functions[@]}"; do
+  #  supabase functions deploy "$fn" --project-ref "$ref" --no-verify-jwt --use-api
+ # done
+#else
   echo "==> modo integration: a integracao GitHub do Supabase aplica este push"
-fi
+#fi
 
 echo "==> expondo os schemas dos modulos na API"
 curl -fsS -X PATCH "https://api.supabase.com/v1/projects/$ref/postgrest" \
