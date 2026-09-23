@@ -9,7 +9,8 @@
 # (o shell busca a zona por rewrite, sem cookie de login da Vercel) e publica
 # o diretorio como site estatico, sem build do lado da Vercel.
 #
-# Ambiente: VERCEL_TOKEN, VERCEL_SCOPE, VERCEL_ALIAS_PREFIX, VERCEL_PROJECT_PREFIX.
+# Ambiente: VERCEL_TOKEN, VERCEL_ALIAS_PREFIX; opcionais VERCEL_SCOPE (time) e
+# VERCEL_PROJECT_PREFIX.
 # Saida: url=<deploy> e host=<alias> em $GITHUB_OUTPUT, quando existir.
 # ===========================================================================
 set -euo pipefail
@@ -20,11 +21,13 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 dist="$root/apps/$zone/dist"
 
 : "${VERCEL_TOKEN:?defina VERCEL_TOKEN}"
-: "${VERCEL_SCOPE:?defina VERCEL_SCOPE (usuario ou time na Vercel)}"
 : "${VERCEL_ALIAS_PREFIX:?defina VERCEL_ALIAS_PREFIX}"
 project="${VERCEL_PROJECT_PREFIX:-$VERCEL_ALIAS_PREFIX}-$zone"
 
-vercel() { (cd "$root" && pnpm exec vercel --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" "$@"); }
+# Sem VERCEL_SCOPE, vale a conta pessoal dona do token.
+scope=()
+[[ -n "${VERCEL_SCOPE:-}" ]] && scope=(--scope "$VERCEL_SCOPE")
+vercel() { (cd "$root" && pnpm exec vercel --token "$VERCEL_TOKEN" "${scope[@]}" "$@"); }
 
 if [[ ! -f "$dist/index.html" && ! -f "$dist/_zones/$zone/index.html" ]]; then
   echo "Build de $zone nao encontrado em $dist. Rode o build antes." >&2

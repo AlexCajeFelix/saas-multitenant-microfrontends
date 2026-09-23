@@ -74,7 +74,7 @@ jobs:
       - name: Conferir configuracao do ambiente
         run: |
           missing=()
-          for v in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF SUPABASE_URL SUPABASE_ANON_KEY VERCEL_TOKEN VERCEL_SCOPE VERCEL_ALIAS_PREFIX; do
+          for v in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF SUPABASE_URL SUPABASE_ANON_KEY VERCEL_TOKEN VERCEL_ALIAS_PREFIX; do
             [[ -n "${!v:-}" ]] || missing+=("$v")
           done
           if (( ${#missing[@]} )); then

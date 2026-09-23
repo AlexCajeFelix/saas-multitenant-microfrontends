@@ -153,7 +153,7 @@ repositorio privado, exigem GitHub Pro ou Team.
 |---|---|---|
 | secret do repo | `SUPABASE_ACCESS_TOKEN` | token pessoal: supabase.com/dashboard/account/tokens |
 | secret do repo | `VERCEL_TOKEN` | vercel.com/account/tokens |
-| var do repo | `VERCEL_SCOPE` | seu usuario (ou time) na Vercel |
+| var do repo | `VERCEL_SCOPE` | opcional: slug do time na Vercel (sem ele, a conta dona do token) |
 | var do repo | `VERCEL_ALIAS_PREFIX` | prefixo unico dos dominios `*.vercel.app` |
 | var do repo | `SUPABASE_REF_DEV`, `SUPABASE_REF_PROD` | ref de cada projeto (usado pelo `drift` no PR) |
 | var do repo | `SUPABASE_DEPLOY_MODE` | `integration` (padrao) ou `cli` |
