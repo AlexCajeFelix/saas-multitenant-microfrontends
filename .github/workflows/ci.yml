@@ -100,6 +100,8 @@ jobs:
       - name: Drift contra o banco que este PR vai atingir
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          # Senha fixa: o login temporario do CLI pode expirar antes do diff.
+          SUPABASE_DB_PASSWORD: ${{ github.base_ref == 'main' && secrets.SUPABASE_DB_PASSWORD_PROD || secrets.SUPABASE_DB_PASSWORD_DEV }}
           # main -> projeto de producao; demais branches -> projeto de dev.
           REF: ${{ github.base_ref == 'main' && vars.SUPABASE_REF_PROD || vars.SUPABASE_REF_DEV }}
         run: scripts/deploy/supabase-drift.sh "$REF" --allow-pending
