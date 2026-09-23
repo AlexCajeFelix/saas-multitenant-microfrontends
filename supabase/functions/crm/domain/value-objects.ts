@@ -1,9 +1,4 @@
-import {
-  BusinessRuleError,
-  Guard,
-  ValidationError,
-  ValueObject,
-} from "../../_shared/mod.ts";
+import { BusinessRuleError, Guard, ValidationError, ValueObject } from "../../_shared/mod.ts";
 
 export type DealStatusValue = "open" | "won" | "lost";
 

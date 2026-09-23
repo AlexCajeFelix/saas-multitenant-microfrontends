@@ -39,14 +39,27 @@ export class SupabaseConnection {
 
   static fromEnv(): SupabaseConnection {
     const url = Deno.env.get("SUPABASE_URL");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    // Na nuvem, projetos so com as chaves novas recebem SUPABASE_PUBLISHABLE_KEYS
+    // e SUPABASE_SECRET_KEYS (JSON { nome: chave }) no lugar das legadas.
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ??
+      SupabaseConnection.namedKey("SUPABASE_PUBLISHABLE_KEYS");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
+      SupabaseConnection.namedKey("SUPABASE_SECRET_KEYS");
     if (!url || !anonKey || !serviceKey) {
       throw new InfrastructureError(
         "SUPABASE_URL, SUPABASE_ANON_KEY e SUPABASE_SERVICE_ROLE_KEY sao obrigatorios",
       );
     }
     return new SupabaseConnection(url, anonKey, serviceKey);
+  }
+
+  private static namedKey(variable: string): string | undefined {
+    try {
+      const keys = JSON.parse(Deno.env.get(variable) ?? "{}") as Record<string, string>;
+      return keys.default ?? Object.values(keys)[0];
+    } catch {
+      return undefined;
+    }
   }
 
   asService(schema = "public"): Db {
@@ -241,7 +254,11 @@ export abstract class SupabaseRepository<
       .order(column, { ascending: request.ascending })
       .range(request.offset, request.rangeEnd);
     if (error) this.fail(error);
-    return new Page(this.mapper.toDomainList((data ?? []) as unknown as TRow[]), count ?? 0, request);
+    return new Page(
+      this.mapper.toDomainList((data ?? []) as unknown as TRow[]),
+      count ?? 0,
+      request,
+    );
   }
 
   /** Ponto de partida das listagens: ja conta e ja aplica o escopo de tenant. */

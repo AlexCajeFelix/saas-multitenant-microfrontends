@@ -21,45 +21,120 @@ export interface JwtClaims {
   [key: string]: unknown;
 }
 
+type Jwk = JsonWebKey & { kid?: string; alg?: string };
+
 /**
- * Verificacao de JWT HS256 com Web Crypto.
+ * Verificacao de JWT com Web Crypto.
  *
- * O runtime das Edge Functions roda com VERIFY_JWT desligado, porque a
- * autorizacao e nossa. Se confiassemos no token sem conferir a assinatura,
- * qualquer um poderia se declarar dono de um tenant nas operacoes que usam a
- * chave de servico. Por isso a assinatura e conferida aqui, com o mesmo
- * segredo que o GoTrue usa para assinar.
+ * As funcoes rodam com `verify_jwt = false`, porque a autorizacao e nossa. Se
+ * confiassemos no token sem conferir a assinatura, qualquer um poderia se
+ * declarar dono de um tenant nas operacoes que usam a chave de servico. Por
+ * isso a assinatura e conferida aqui, de um de dois jeitos:
+ *
+ * - HS256 com `JWT_SECRET`: o stack local do docker compose, em que o GoTrue
+ *   assina com um segredo compartilhado;
+ * - ES256/RS256 pelas chaves publicas do projeto (JWKS): o Supabase na nuvem,
+ *   que assina com chave assimetrica e publica a parte publica em
+ *   `/auth/v1/.well-known/jwks.json`.
+ *
+ * Um projeto na nuvem ainda em HS256 legado nao expoe o segredo para as
+ * funcoes; nesse caso o token e conferido pelo proprio GoTrue (`/auth/v1/user`).
  */
 export class JwtVerifier {
-  private keyPromise: Promise<CryptoKey> | null = null;
+  private hmacKey: Promise<CryptoKey> | null = null;
+  private jwks: Promise<Jwk[]> | null = null;
+  private jwksFetchedAt = 0;
+  private readonly publicKeys = new Map<string, Promise<CryptoKey>>();
 
-  constructor(private readonly secret: string) {}
+  constructor(
+    private readonly options: {
+      secret?: string;
+      supabaseUrl?: string;
+      anonKey?: string;
+      serviceKey?: string;
+    },
+  ) {}
 
   static fromEnv(): JwtVerifier {
-    const secret = Deno.env.get("JWT_SECRET");
-    if (!secret) throw new InfrastructureError("JWT_SECRET nao configurado");
-    return new JwtVerifier(secret);
+    const secret = Deno.env.get("JWT_SECRET") ?? undefined;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? undefined;
+    if (!secret && !supabaseUrl) {
+      throw new InfrastructureError("Defina JWT_SECRET (local) ou SUPABASE_URL (nuvem)");
+    }
+    return new JwtVerifier({
+      secret,
+      supabaseUrl,
+      anonKey: Deno.env.get("SUPABASE_ANON_KEY") ?? undefined,
+      serviceKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? undefined,
+    });
   }
 
-  private key(): Promise<CryptoKey> {
-    if (!this.keyPromise) {
-      this.keyPromise = crypto.subtle.importKey(
+  private static decodeSegment(segment: string): Record<string, unknown> {
+    return JSON.parse(new TextDecoder().decode(JwtVerifier.decodeBytes(segment)));
+  }
+
+  private static decodeBytes(segment: string): Uint8Array {
+    const normalized = segment.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+    return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+  }
+
+  private hmac(): Promise<CryptoKey> {
+    if (!this.hmacKey) {
+      this.hmacKey = crypto.subtle.importKey(
         "raw",
-        new TextEncoder().encode(this.secret),
+        new TextEncoder().encode(this.options.secret),
         { name: "HMAC", hash: "SHA-256" },
         false,
         ["verify"],
       );
     }
-    return this.keyPromise;
+    return this.hmacKey;
   }
 
-  private static decodeSegment(segment: string): Record<string, unknown> {
-    const padded = segment.replace(/-/g, "+").replace(/_/g, "/");
-    const withPadding = padded + "=".repeat((4 - (padded.length % 4)) % 4);
-    const binary = atob(withPadding);
-    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    return JSON.parse(new TextDecoder().decode(bytes));
+  /** JWKS com cache de dez minutos; um `kid` desconhecido forca releitura. */
+  private async keySet(forceRefresh = false): Promise<Jwk[]> {
+    const stale = Date.now() - this.jwksFetchedAt > 10 * 60 * 1000;
+    if (!this.jwks || stale || forceRefresh) {
+      this.jwksFetchedAt = Date.now();
+      this.jwks = fetch(`${this.options.supabaseUrl}/auth/v1/.well-known/jwks.json`)
+        .then((response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json() as Promise<{ keys?: Jwk[] }>;
+        })
+        .then((body) => body.keys ?? [])
+        .catch((error) => {
+          this.jwks = null;
+          throw new InfrastructureError(`Falha ao ler as chaves publicas (JWKS): ${error}`);
+        });
+    }
+    return await this.jwks;
+  }
+
+  private async publicKey(alg: string, kid: string | undefined): Promise<CryptoKey> {
+    const cacheKey = `${alg}:${kid ?? ""}`;
+    const cached = this.publicKeys.get(cacheKey);
+    if (cached) return await cached;
+
+    const find = (keys: Jwk[]) => keys.find((key) => (kid ? key.kid === kid : key.alg === alg));
+    const jwk = find(await this.keySet()) ?? find(await this.keySet(true));
+    if (!jwk) throw new UnauthorizedError("Chave de assinatura do token desconhecida");
+
+    const algorithm = alg === "ES256"
+      ? { name: "ECDSA", namedCurve: "P-256" }
+      : { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" };
+    const promise = crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
+    this.publicKeys.set(cacheKey, promise);
+    return await promise;
+  }
+
+  /** Ultimo recurso para HS256 sem segredo: o GoTrue diz se o token vale. */
+  private async verifyWithAuthServer(token: string): Promise<void> {
+    const response = await fetch(`${this.options.supabaseUrl}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: this.options.anonKey ?? "" },
+    }).catch(() => null);
+    if (!response) throw new InfrastructureError("Nao consegui falar com o servico de auth");
+    if (!response.ok) throw new UnauthorizedError("Token recusado pelo servico de auth");
   }
 
   async verify(token: string): Promise<JwtClaims> {
@@ -69,27 +144,42 @@ export class JwtVerifier {
     const [headerPart, payloadPart, signaturePart] = parts;
     let header: Record<string, unknown>;
     let payload: JwtClaims;
+    let signature: Uint8Array;
     try {
       header = JwtVerifier.decodeSegment(headerPart);
       payload = JwtVerifier.decodeSegment(payloadPart) as JwtClaims;
+      signature = JwtVerifier.decodeBytes(signaturePart);
     } catch {
       throw new UnauthorizedError("Token ilegivel");
     }
 
-    if (header.alg !== "HS256") {
-      throw new UnauthorizedError(`Algoritmo de token nao suportado: ${String(header.alg)}`);
+    const signed = new TextEncoder().encode(`${headerPart}.${payloadPart}`);
+    const alg = String(header.alg);
+    let valid: boolean;
+
+    if (alg === "HS256" && this.options.secret) {
+      valid = await crypto.subtle.verify("HMAC", await this.hmac(), signature, signed);
+    } else if (alg === "HS256") {
+      // Chave de servico legada: basta ser identica a que o runtime recebeu.
+      if (payload.role === "service_role") {
+        valid = Boolean(this.options.serviceKey) && token === this.options.serviceKey;
+      } else if (payload.role === "anon") {
+        valid = Boolean(this.options.anonKey) && token === this.options.anonKey;
+      } else {
+        await this.verifyWithAuthServer(token);
+        valid = true;
+      }
+    } else if (alg === "ES256" || alg === "RS256") {
+      if (!this.options.supabaseUrl) throw new InfrastructureError("SUPABASE_URL nao configurado");
+      const key = await this.publicKey(alg, header.kid as string | undefined);
+      const algorithm = alg === "ES256"
+        ? { name: "ECDSA", hash: "SHA-256" }
+        : { name: "RSASSA-PKCS1-v1_5" };
+      valid = await crypto.subtle.verify(algorithm, key, signature, signed);
+    } else {
+      throw new UnauthorizedError(`Algoritmo de token nao suportado: ${alg}`);
     }
 
-    const normalized = signaturePart.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
-    const signature = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
-
-    const valid = await crypto.subtle.verify(
-      "HMAC",
-      await this.key(),
-      signature,
-      new TextEncoder().encode(`${headerPart}.${payloadPart}`),
-    );
     if (!valid) throw new UnauthorizedError("Assinatura do token invalida");
 
     if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) {
@@ -136,7 +226,10 @@ export class ContextFactory {
     if (header && header.toLowerCase().startsWith("bearer ")) {
       return header.slice(7).trim();
     }
-    return request.headers.get("apikey");
+    // Chaves publishable/secret (sb_...) nao sao JWT: identificam o projeto,
+    // nao um usuario. Sem Authorization, a requisicao e anonima.
+    const apikey = request.headers.get("apikey");
+    return apikey && !apikey.startsWith("sb_") ? apikey : null;
   }
 
   private static tenantFrom(request: Request, claims: JwtClaims): string | null {

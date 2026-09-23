@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/**/*.{mjs,js}"],
+      "ignoreDependencies": ["vercel"]
+    },
+    "apps/*": {},
+    "packages/platform": {
+      "entry": ["src/zone.tsx", "vite.ts"],
+      "project": ["src/**/*.{ts,tsx,css}"]
+    }
+  },
+  "ignore": ["supabase/**", "tests/**"],
+  "ignoreExportsUsedInFile": true
+}

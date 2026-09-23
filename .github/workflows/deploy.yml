@@ -1,0 +1,123 @@
+# ===========================================================================
+# Deploy: estrategia Recreate, um ambiente por branch.
+#
+#   develop -> dev      homol -> homol      staging -> staging      main -> prod
+#
+# Supabase: dev, homol e staging usam o projeto de dev; main usa o de prod.
+#
+# Ordem fixa, cada etapa so comeca se a anterior terminou bem:
+#   1. banco      migrations e Edge Functions (integracao GitHub do Supabase ou
+#                 CLI), schemas expostos, espera o banco na ultima migration
+#   2. drift      o schema real tem que bater com o repositorio
+#   3. zonas      build e deploy das 5 zonas, cada uma no alias do ambiente
+#   4. shell      build e deploy do shell, que repassa para as zonas
+#   5. health     versao certa em tudo, pela URL publica
+#
+# Rollback: rode este workflow manualmente com `ref` = commit bom anterior.
+# Recreate de novo, na versao antiga.
+# ===========================================================================
+name: Deploy
+
+on:
+  push:
+    branches: [develop, homol, staging, main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Ambiente
+        type: choice
+        options: [dev, homol, staging, prod]
+        required: true
+      ref:
+        description: Commit, tag ou branch a publicar (vazio = ponta da branch do ambiente). Use para rollback.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: deploy (${{ inputs.environment || (github.ref_name == 'main' && 'prod') || (github.ref_name == 'develop' && 'dev') || github.ref_name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment:
+      name: ${{ inputs.environment || (github.ref_name == 'main' && 'prod') || (github.ref_name == 'develop' && 'dev') || github.ref_name }}
+      url: ${{ steps.shell.outputs.host && format('https://{0}', steps.shell.outputs.host) }}
+    # Um deploy por ambiente de cada vez; o seguinte espera, nao cancela.
+    concurrency:
+      group: deploy-${{ inputs.environment || (github.ref_name == 'main' && 'prod') || (github.ref_name == 'develop' && 'dev') || github.ref_name }}
+      cancel-in-progress: false
+    env:
+      DEPLOY_ENV: ${{ inputs.environment || (github.ref_name == 'main' && 'prod') || (github.ref_name == 'develop' && 'dev') || github.ref_name }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+      SUPABASE_DEPLOY_MODE: ${{ vars.SUPABASE_DEPLOY_MODE || 'integration' }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE }}
+      VERCEL_ALIAS_PREFIX: ${{ vars.VERCEL_ALIAS_PREFIX }}
+      VERCEL_PROJECT_PREFIX: ${{ vars.VERCEL_PROJECT_PREFIX || vars.VERCEL_ALIAS_PREFIX }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Commit publicado
+        id: meta
+        run: |
+          sha="$(git rev-parse HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "### Deploy $DEPLOY_ENV em \`$sha\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Conferir configuracao do ambiente
+        run: |
+          missing=()
+          for v in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF SUPABASE_URL SUPABASE_ANON_KEY VERCEL_TOKEN VERCEL_SCOPE VERCEL_ALIAS_PREFIX; do
+            [[ -n "${!v:-}" ]] || missing+=("$v")
+          done
+          if (( ${#missing[@]} )); then
+            echo "::error::Faltando no ambiente '$DEPLOY_ENV': ${missing[*]} (veja docs/deploy.md)"
+            exit 1
+          fi
+
+      - uses: ./.github/actions/setup
+
+      # 1. Banco -------------------------------------------------------------
+      - name: Banco e Edge Functions (${{ env.SUPABASE_DEPLOY_MODE }})
+        run: scripts/deploy/supabase-deploy.sh "$SUPABASE_PROJECT_REF"
+
+      # 2. Drift -------------------------------------------------------------
+      - name: Drift pos-deploy
+        # Num rollback o repositorio antigo nao tem as migrations novas, que
+        # continuam no banco; o drift acusaria isso. So vale no fluxo normal.
+        if: ${{ !inputs.ref }}
+        run: scripts/deploy/supabase-drift.sh "$SUPABASE_PROJECT_REF"
+
+      # 3 e 4. Front: zonas primeiro, shell por ultimo -----------------------
+      - name: Build das 6 zonas
+        env:
+          VITE_API_URL: ${{ vars.SUPABASE_URL }}
+          VITE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          VITE_APP_VERSION: ${{ steps.meta.outputs.sha }}
+          VITE_SHOW_DEMO_USERS: ${{ vars.SHOW_DEMO_USERS || 'false' }}
+        run: pnpm build
+
+      - name: Deploy das zonas
+        env:
+          GITHUB_SHA: ${{ steps.meta.outputs.sha }}
+        run: |
+          for zone in tenancy iam crm projects billing; do
+            scripts/deploy/vercel-deploy.sh "$zone" "$DEPLOY_ENV"
+          done
+
+      - name: Deploy do shell
+        id: shell
+        env:
+          GITHUB_SHA: ${{ steps.meta.outputs.sha }}
+        run: scripts/deploy/vercel-deploy.sh shell "$DEPLOY_ENV"
+
+      # 5. Health ------------------------------------------------------------
+      - name: Health check (versao certa em tudo)
+        run: scripts/deploy/health-check.sh "https://${{ steps.shell.outputs.host }}" "${{ steps.meta.outputs.sha }}"

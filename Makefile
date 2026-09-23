@@ -55,18 +55,21 @@ check: ## Type-check das cinco Edge Functions
 smoke: ## Teste ponta a ponta contra o stack no ar
 	@bash scripts/smoke-test.sh
 
-web-env: keys ## Copia VITE_API_URL e VITE_ANON_KEY do .env para web/.env.local
+web-env: keys ## Escreve o .env.local (VITE_API_URL e VITE_ANON_KEY) a partir do .env
 	@bash scripts/web-env.sh
 
-web: web-env ## Sobe o frontend em http://localhost:3000
-	@cd web && [ -d node_modules ] || npm install
-	@cd web && npm run dev
+web: web-env ## Sobe as 6 zonas; abra http://localhost:3000 (o shell repassa as demais)
+	@[ -d node_modules ] || pnpm install
+	@pnpm dev
 
-web-build: web-env ## Type-check e build de producao do frontend
-	@cd web && [ -d node_modules ] || npm install
-	@cd web && npm run build
+web-build: web-env ## Type-check e build de producao das 6 zonas
+	@[ -d node_modules ] || pnpm install
+	@pnpm typecheck && pnpm build
+
+quality: ## Formatacao, lint, tipos e codigo morto (o mesmo job do CI)
+	@pnpm quality
 
 restart-functions: ## Recarrega o runtime das Edge Functions
 	@$(COMPOSE) restart functions
 
-.PHONY: help keys up down reset migrate seed logs ps psql test check smoke restart-functions web web-env web-build
+.PHONY: help keys up down reset migrate seed logs ps psql test check smoke restart-functions web web-env web-build quality

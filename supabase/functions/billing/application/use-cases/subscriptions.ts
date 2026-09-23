@@ -1,8 +1,8 @@
 import {
-  BaseUseCase,
-  ConflictError,
   type AuditTrail,
+  BaseUseCase,
   type Clock,
+  ConflictError,
   type EventPublisher,
   type IdGenerator,
   type RequestContext,
@@ -266,7 +266,12 @@ export class RecordUsageUseCase extends BaseUseCase<RecordUsageInput, Record<str
     await this.events.publish([
       new UsageRecorded(tenantId, id, input.metric, input.quantity),
     ]);
-    return { id, metric: input.metric, quantity: input.quantity, recordedAt: recordedAt.toISOString() };
+    return {
+      id,
+      metric: input.metric,
+      quantity: input.quantity,
+      recordedAt: recordedAt.toISOString(),
+    };
   }
 }
 
@@ -289,7 +294,8 @@ export class GetUsageUseCase extends BaseUseCase<void, Record<string, unknown>> 
   ): Promise<Record<string, unknown>> {
     const tenantId = ctx.requireTenantId();
     const subscription = await this.subscriptions.findLive(tenantId);
-    const from = subscription?.period.start ?? new Date(this.clock.now().getTime() - 30 * 86_400_000);
+    const from = subscription?.period.start ??
+      new Date(this.clock.now().getTime() - 30 * 86_400_000);
     const to = subscription?.period.end ?? this.clock.now();
 
     return UsagePresenter.toDto(await this.usage.totals(tenantId, from, to), from, to);

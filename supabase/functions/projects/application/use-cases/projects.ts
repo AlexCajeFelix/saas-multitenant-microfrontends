@@ -1,8 +1,8 @@
 import {
-  BaseUseCase,
-  ConflictError,
   type AuditTrail,
+  BaseUseCase,
   type Clock,
+  ConflictError,
   type EventPublisher,
   type IdGenerator,
   type Page,
@@ -214,8 +214,7 @@ export class AddMilestoneUseCase extends BaseUseCase<AddMilestoneInput, Record<s
   }
 }
 
-export class GetProjectSummaryUseCase
-  extends BaseUseCase<{ id: string }, Record<string, unknown>> {
+export class GetProjectSummaryUseCase extends BaseUseCase<{ id: string }, Record<string, unknown>> {
   constructor(private readonly projects: ProjectRepository) {
     super();
   }

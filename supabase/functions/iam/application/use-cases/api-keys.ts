@@ -1,10 +1,10 @@
 import {
-  BaseUseCase,
-  NotFoundError,
   type AuditTrail,
+  BaseUseCase,
   type Clock,
   type EventPublisher,
   type IdGenerator,
+  NotFoundError,
   type Page,
   type PageRequest,
   type RequestContext,

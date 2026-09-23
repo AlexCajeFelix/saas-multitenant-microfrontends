@@ -2,11 +2,12 @@
 
 SaaS de gestao completo, do banco a tela. Cinco modulos de negocio publicados
 como Edge Functions em Deno, sobre um Postgres multi-tenant com Row Level
-Security, mais uma interface em React que consome a API inteira. Roda tudo no
-Docker, na sua maquina, sem o Supabase CLI.
+Security, mais uma interface em React dividida em seis micro frontends que
+consome a API inteira. Roda tudo no Docker, na sua maquina, e publica em quatro
+ambientes (dev, homol, staging, prod) no Supabase e na Vercel.
 
 ```
-React + Vite :3000  →  nginx :8000  →  GoTrue      (/auth/v1)
+6 zonas React :3000 →  nginx :8000  →  GoTrue      (/auth/v1)
                                     →  PostgREST   (/rest/v1)
                                     →  edge-runtime(/functions/v1) → tenancy iam crm projects billing
                                                                             ↓
@@ -14,19 +15,28 @@ React + Vite :3000  →  nginx :8000  →  GoTrue      (/auth/v1)
 ```
 
 O backend esta em `supabase/functions/`, um diretorio por modulo. O frontend
-esta em `web/`, com [README proprio](web/README.md) explicando como ele fala com
-a API e por que foi montado assim.
+esta em `apps/` (uma zona por modulo, mais o shell) e `packages/platform` (o
+nucleo compartilhado). O [guia do frontend](docs/frontend.md) explica como ele
+fala com a API, e o [guia de deploy](docs/deploy.md) cobre micro frontends,
+ambientes, pipeline, drift e health check.
+
+| Ambiente | Branch | Supabase |
+|---|---|---|
+| dev | `develop` | projeto dev |
+| homol | `homol` | projeto dev |
+| staging | `staging` | projeto dev |
+| prod | `main` | projeto prod |
 
 ---
 
 ## Comecando
 
-Precisa apenas de Docker, Docker Compose e Node (para gerar as chaves JWT).
+Precisa de Docker, Docker Compose, Node 22 e pnpm (`corepack enable`).
 
 ```bash
 make up      # gera o .env, sobe tudo e aplica as migrations
 make seed    # cria 4 usuarios e popula dois tenants de demonstracao
-make web     # sobe a interface em http://localhost:3000
+make web     # sobe as 6 zonas; abra http://localhost:3000
 ```
 
 Abra `http://localhost:3000`, clique em um dos usuarios de demonstracao no
@@ -40,7 +50,8 @@ Para conferir que esta tudo de pe:
 ```bash
 make smoke      # 53 verificacoes ponta a ponta nos cinco modulos
 make test       # 38 testes de dominio e de aplicacao, sem banco
-make web-build  # type-check e build de producao do frontend
+make web-build  # type-check e build de producao das 6 zonas
+make quality    # prettier, eslint, tsc e knip, igual ao CI
 ```
 
 `make help` lista os demais alvos: `down`, `reset`, `migrate`, `logs`, `psql`,
@@ -316,19 +327,20 @@ filtros proprios de cada rota.
 
 ## O frontend
 
-Uma aplicacao React em `web/`, que consome os cinco modulos pela mesma API
+Seis aplicacoes React em `apps/` (o shell e uma zona por modulo, ver
+[docs/deploy.md](docs/deploy.md)), que consomem os cinco modulos pela mesma API
 publica documentada acima. Nao ha atalho: ela fala HTTP com o gateway, manda o
 `Authorization` e o `x-tenant-id` como qualquer outro cliente, e apanha os
 mesmos 403 que o `curl` apanharia.
 
 ```bash
-make web        # instala, escreve web/.env.local e sobe o Vite na porta 3000
+make web        # instala, escreve o .env.local e sobe as 6 zonas (shell na 3000)
 make web-build  # type-check e build de producao
 ```
 
 A `ANON_KEY` e gerada por maquina a partir do seu `JWT_SECRET`, entao ela nao
 mora no repositorio. O alvo `make web-env` copia a chave do `.env` da raiz para
-`web/.env.local`; `make web` faz isso antes de subir.
+o `.env.local`, lido por todas as zonas; `make web` faz isso antes de subir.
 
 ### O que da para fazer nele
 
@@ -354,7 +366,7 @@ mora no repositorio. O alvo `make web-env` copia a chave do `.env` da raiz para
 ### A ideia por tras
 
 Tres decisoes moldam o resto, e as tres estao detalhadas no
-[README do frontend](web/README.md):
+[guia do frontend](docs/frontend.md):
 
 **A autorizacao aparece, nao some.** Um botao que o seu papel nao alcanca fica
 desabilitado, com a permissao que falta no titulo, em vez de sumir. Entrando
@@ -386,7 +398,8 @@ isso e justamente o que nao pode acontecer.
 
 Um detalhe importante do banco: a imagem `supabase/postgres` protege os papeis
 `authenticator`, `service_role` e `supabase_auth_admin` — nem o usuario
-`postgres` os altera. Por isso a migration 0001 cria um papel proprio,
+`postgres` os altera. Por isso o `docker/db/bootstrap.sql` (aplicado antes das
+migrations, so no compose) cria um papel proprio,
 `app_authenticator`, que e quem o PostgREST usa para conectar. Ele **nao** tem
 `BYPASSRLS`, e e justamente essa diferenca que faz a RLS valer.
 
@@ -396,7 +409,7 @@ partir do `JWT_SECRET` do seu `.env`. Nao ha chave fixa no repositorio.
 ### Migrations
 
 ```
-0001_extensions_and_roles.sql   papeis, schemas, helpers de auth
+0001_extensions_and_roles.sql   extensoes, schemas e privilegios padrao
 0002_core_tenancy.sql           tenants, membros, convites, auditoria, outbox,
                                 e a fabrica de politicas core.enable_tenant_rls
 0003_iam.sql                    permissoes, papeis, chaves, core.has_permission
@@ -406,9 +419,12 @@ partir do `JWT_SECRET` do seu `.env`. Nao ha chave fixa no repositorio.
 0007_permissions_seed.sql       37 permissoes, 5 papeis de sistema, 4 planos
 0008_rls_policies.sql           RLS em 25 tabelas
 0009_iam_functions.sql          troca atomica das permissoes de um papel
+0010_schema_version.sql         versao do schema para o health check do deploy
 ```
 
-Sao idempotentes: `make migrate` pode rodar quantas vezes precisar.
+Sao idempotentes: `make migrate` pode rodar quantas vezes precisar. As mesmas
+migrations sobem para o Supabase na nuvem, sem alteracao: o que so o Postgres
+cru do compose precisa (papeis da API, `auth.uid()`) fica no bootstrap.
 
 ---
 
@@ -446,8 +462,9 @@ modulos e terminando com o teste de isolamento entre dois tenants.
   CRM e faturamento por `TenantProvisioning`. Nenhum modulo importa o dominio de
   outro.
 - **JWT verificado na funcao.** O runtime roda com `VERIFY_JWT` desligado porque
-  a autorizacao e nossa; a assinatura e conferida em `JwtVerifier`, com o mesmo
-  segredo do GoTrue. Sem isso, as operacoes que usam a chave de servico
+  a autorizacao e nossa; a assinatura e conferida em `JwtVerifier`: HS256 com o
+  segredo do GoTrue no compose, ES256/RS256 pelas chaves publicas (JWKS) do
+  projeto na nuvem. Sem isso, as operacoes que usam a chave de servico
   aceitariam um token forjado.
 - **Ambiente de desenvolvimento.** O GoTrue conecta como `postgres` e confirma
   e-mails sozinho; as senhas do `.env` sao de exemplo. Para producao, troque o

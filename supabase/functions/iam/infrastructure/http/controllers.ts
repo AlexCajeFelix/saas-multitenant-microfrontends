@@ -1,7 +1,7 @@
 import {
   Controller,
-  HttpResponse,
   type HttpRequest,
+  HttpResponse,
   type RequestContext,
   type Router,
 } from "../../../_shared/mod.ts";

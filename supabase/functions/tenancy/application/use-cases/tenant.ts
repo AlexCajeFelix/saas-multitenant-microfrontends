@@ -1,10 +1,10 @@
 import {
-  BaseUseCase,
-  ConflictError,
-  ForbiddenError,
   type AuditTrail,
+  BaseUseCase,
   type Clock,
+  ConflictError,
   type EventPublisher,
+  ForbiddenError,
   type IdGenerator,
   type RequestContext,
   Slug,

@@ -1,6 +1,6 @@
 import {
-  BaseUseCase,
   type AuditTrail,
+  BaseUseCase,
   type Clock,
   type EventPublisher,
   type IdGenerator,
@@ -212,9 +212,7 @@ export class ChangeTaskStatusUseCase
     input: { id: string; status: TaskStatusValue },
   ): Promise<Record<string, unknown>> {
     const task = await this.tasks.getById(input.id);
-    const openSubtasks = input.status === "done"
-      ? await this.policy.countOpenSubtasks(task.id)
-      : 0;
+    const openSubtasks = input.status === "done" ? await this.policy.countOpenSubtasks(task.id) : 0;
 
     task.changeStatus(input.status, openSubtasks, this.clock.now());
     const saved = await this.tasks.save(task);

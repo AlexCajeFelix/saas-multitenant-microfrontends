@@ -50,7 +50,8 @@ export class SupabaseTenantRepository extends TenancyRepository implements Tenan
   }
 
   async findById(id: string): Promise<Tenant | null> {
-    const { data, error } = await this.client.from("tenants").select("*").eq("id", id).maybeSingle();
+    const { data, error } = await this.client.from("tenants").select("*").eq("id", id)
+      .maybeSingle();
     if (error) this.fail(error);
     return data ? this.mapper.toDomain(data as unknown as TenantRow) : null;
   }

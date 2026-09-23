@@ -63,8 +63,11 @@ export class ProjectsContainer {
   }
 
   get logger(): Logger {
-    return this.lazy("logger", () =>
-      this.runtime.logger.child({ requestId: this.ctx.requestId, tenantId: this.ctx.tenantId }));
+    return this.lazy(
+      "logger",
+      () =>
+        this.runtime.logger.child({ requestId: this.ctx.requestId, tenantId: this.ctx.tenantId }),
+    );
   }
   get clock(): Clock {
     return this.runtime.clock;
@@ -129,8 +132,7 @@ export class ProjectsContainer {
   get changeProjectStatus(): ChangeProjectStatusUseCase {
     return this.lazy(
       "changeProjectStatus",
-      () =>
-        new ChangeProjectStatusUseCase(this.projects, this.clock, this.events, this.audit),
+      () => new ChangeProjectStatusUseCase(this.projects, this.clock, this.events, this.audit),
     );
   }
   get addMilestone(): AddMilestoneUseCase {

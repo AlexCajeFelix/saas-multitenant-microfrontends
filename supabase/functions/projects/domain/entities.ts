@@ -1,10 +1,4 @@
-import {
-  AggregateRoot,
-  BusinessRuleError,
-  Entity,
-  Guard,
-  Money,
-} from "../../_shared/mod.ts";
+import { AggregateRoot, BusinessRuleError, Entity, Guard, Money } from "../../_shared/mod.ts";
 import {
   ProjectCreated,
   ProjectStatusChanged,
@@ -229,16 +223,19 @@ export class Project extends AggregateRoot<ProjectProps> {
     }
   }
 
-  update(patch: Partial<{
-    name: string;
-    description: string;
-    startDate: Date | null;
-    dueDate: Date | null;
-    budgetCents: number;
-    currency: string;
-    ownerId: string | null;
-    clientCompanyId: string | null;
-  }>, now: Date): void {
+  update(
+    patch: Partial<{
+      name: string;
+      description: string;
+      startDate: Date | null;
+      dueDate: Date | null;
+      budgetCents: number;
+      currency: string;
+      ownerId: string | null;
+      clientCompanyId: string | null;
+    }>,
+    now: Date,
+  ): void {
     if (this.props.status.isArchived) {
       throw new BusinessRuleError("Projeto arquivado nao pode ser alterado");
     }
@@ -567,15 +564,18 @@ export class Task extends AggregateRoot<TaskProps> {
     return this.props.timeEntries.reduce((sum, entry) => sum + entry.duration.minutes, 0);
   }
 
-  update(patch: Partial<{
-    title: string;
-    description: string;
-    priority: string;
-    estimateMinutes: number;
-    dueDate: Date | null;
-    milestoneId: string | null;
-    position: number;
-  }>, now: Date): void {
+  update(
+    patch: Partial<{
+      title: string;
+      description: string;
+      priority: string;
+      estimateMinutes: number;
+      dueDate: Date | null;
+      milestoneId: string | null;
+      position: number;
+    }>,
+    now: Date,
+  ): void {
     if (patch.title !== undefined) this.props.title = Guard.length(patch.title, "title", 2, 200);
     if (patch.description !== undefined) {
       this.props.description = patch.description.slice(0, 4000);
@@ -660,7 +660,13 @@ export class Task extends AggregateRoot<TaskProps> {
     this.newTimeEntries.push(entry);
     this.props.updatedAt = input.now;
     this.record(
-      new TimeLogged(this.tenantId, this._id, this.props.projectId, entry.duration.minutes, input.userId),
+      new TimeLogged(
+        this.tenantId,
+        this._id,
+        this.props.projectId,
+        entry.duration.minutes,
+        input.userId,
+      ),
     );
     return entry;
   }

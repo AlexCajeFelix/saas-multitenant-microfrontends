@@ -109,16 +109,19 @@ export class Company extends AggregateRoot<CompanyProps> {
     return this.props.updatedAt;
   }
 
-  update(patch: Partial<{
-    name: string;
-    domain: string | null;
-    industry: string | null;
-    size: string | null;
-    website: string | null;
-    phone: string | null;
-    address: Record<string, unknown>;
-    ownerId: string | null;
-  }>, now: Date): void {
+  update(
+    patch: Partial<{
+      name: string;
+      domain: string | null;
+      industry: string | null;
+      size: string | null;
+      website: string | null;
+      phone: string | null;
+      address: Record<string, unknown>;
+      ownerId: string | null;
+    }>,
+    now: Date,
+  ): void {
     if (patch.name !== undefined) this.props.name = Guard.length(patch.name, "name", 1, 160);
     if (patch.domain !== undefined) this.props.domain = patch.domain?.toLowerCase() ?? null;
     if (patch.industry !== undefined) this.props.industry = patch.industry;
@@ -221,15 +224,18 @@ export class Contact extends AggregateRoot<ContactProps> {
     return this.props.updatedAt;
   }
 
-  update(patch: Partial<{
-    companyId: string | null;
-    firstName: string;
-    lastName: string;
-    email: string | null;
-    phone: string | null;
-    jobTitle: string | null;
-    ownerId: string | null;
-  }>, now: Date): void {
+  update(
+    patch: Partial<{
+      companyId: string | null;
+      firstName: string;
+      lastName: string;
+      email: string | null;
+      phone: string | null;
+      jobTitle: string | null;
+      ownerId: string | null;
+    }>,
+    now: Date,
+  ): void {
     if (patch.firstName !== undefined || patch.lastName !== undefined) {
       this.props.name = PersonName.create(
         patch.firstName ?? this.props.name.first,
@@ -364,9 +370,7 @@ export class Deal extends AggregateRoot<DealProps> {
     createdBy: string;
     now: Date;
   }): Deal {
-    const stage = input.stageKey
-      ? input.pipeline.require(input.stageKey)
-      : input.pipeline.first;
+    const stage = input.stageKey ? input.pipeline.require(input.stageKey) : input.pipeline.first;
     input.pipeline.ensureMovable(stage);
 
     if (input.expectedCloseDate) {
@@ -399,7 +403,9 @@ export class Deal extends AggregateRoot<DealProps> {
       updatedAt: input.now,
       activities: [],
     });
-    deal.record(new DealCreated(input.tenantId, input.id, deal.title, amount.cents, amount.currency));
+    deal.record(
+      new DealCreated(input.tenantId, input.id, deal.title, amount.cents, amount.currency),
+    );
     return deal;
   }
 
@@ -464,21 +470,26 @@ export class Deal extends AggregateRoot<DealProps> {
   private assertOpen(operation: string): void {
     if (this.props.status.isClosed) {
       throw new BusinessRuleError(
-        `Negocio ja ${this.props.status.value === "won" ? "ganho" : "perdido"}: ${operation} nao e permitido`,
+        `Negocio ja ${
+          this.props.status.value === "won" ? "ganho" : "perdido"
+        }: ${operation} nao e permitido`,
         { dealId: this._id, status: this.props.status.value },
       );
     }
   }
 
-  update(patch: Partial<{
-    title: string;
-    companyId: string | null;
-    contactId: string | null;
-    amountCents: number;
-    currency: string;
-    expectedCloseDate: Date | null;
-    ownerId: string | null;
-  }>, now: Date): void {
+  update(
+    patch: Partial<{
+      title: string;
+      companyId: string | null;
+      contactId: string | null;
+      amountCents: number;
+      currency: string;
+      expectedCloseDate: Date | null;
+      ownerId: string | null;
+    }>,
+    now: Date,
+  ): void {
     this.assertOpen("editar");
     if (patch.title !== undefined) this.props.title = Guard.length(patch.title, "title", 2, 160);
     if (patch.companyId !== undefined) this.props.companyId = patch.companyId;
@@ -508,7 +519,9 @@ export class Deal extends AggregateRoot<DealProps> {
     this.props.stageKey = target.key;
     this.props.probability = target.probability;
     this.props.updatedAt = now;
-    this.record(new DealStageChanged(this.tenantId, this._id, from, target.key, target.probability));
+    this.record(
+      new DealStageChanged(this.tenantId, this._id, from, target.key, target.probability),
+    );
   }
 
   win(pipeline: Pipeline, now: Date): void {
@@ -531,7 +544,13 @@ export class Deal extends AggregateRoot<DealProps> {
     this.props.lostReason = Guard.length(reason, "reason", 3, 240);
     this.props.updatedAt = now;
     this.record(
-      new DealClosed(this.tenantId, this._id, "lost", this.props.amount.cents, this.props.lostReason),
+      new DealClosed(
+        this.tenantId,
+        this._id,
+        "lost",
+        this.props.amount.cents,
+        this.props.lostReason,
+      ),
     );
   }
 

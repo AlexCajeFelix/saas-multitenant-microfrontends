@@ -160,7 +160,10 @@ export class ApiKey extends AggregateRoot<ApiKeyProps> {
     now: Date;
   }): ApiKey {
     const expiresAt = input.expiresInDays
-      ? new Date(input.now.getTime() + Guard.range(input.expiresInDays, "expiresInDays", 1, 3650) * 86_400_000)
+      ? new Date(
+        input.now.getTime() +
+          Guard.range(input.expiresInDays, "expiresInDays", 1, 3650) * 86_400_000,
+      )
       : null;
 
     const key = new ApiKey(input.id, {

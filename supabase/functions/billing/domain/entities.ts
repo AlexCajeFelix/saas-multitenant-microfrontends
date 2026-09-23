@@ -85,9 +85,7 @@ export class Plan extends Entity<PlanProps> {
 
   /** Periodo de cobranca a partir de uma data, conforme o intervalo do plano. */
   periodFrom(start: Date): DateRange {
-    return this.props.interval === "year"
-      ? DateRange.yearFrom(start)
-      : DateRange.monthFrom(start);
+    return this.props.interval === "year" ? DateRange.yearFrom(start) : DateRange.monthFrom(start);
   }
 
   ensureSubscribable(): void {
@@ -507,7 +505,9 @@ export class Invoice extends AggregateRoot<InvoiceProps> {
     }
     this.props.status = this.props.status.transitionTo("open");
     this.props.issuedAt = now;
-    this.props.dueAt = new Date(now.getTime() + Guard.range(dueInDays, "dueInDays", 0, 90) * 86_400_000);
+    this.props.dueAt = new Date(
+      now.getTime() + Guard.range(dueInDays, "dueInDays", 0, 90) * 86_400_000,
+    );
     this.props.updatedAt = now;
     this.record(new InvoiceIssued(this.tenantId, this._id, this.props.number, this.total.cents));
   }

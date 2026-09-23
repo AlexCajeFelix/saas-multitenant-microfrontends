@@ -1,0 +1,116 @@
+# ===========================================================================
+# CI: roda em todo PR para as branches de ambiente. Os nomes dos jobs sao os
+# checks obrigatorios dos rulesets (scripts/setup/github.sh); renomear um job
+# exige atualizar o ruleset.
+# ===========================================================================
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, homol, staging, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  promotion:
+    name: promotion
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conferir o fluxo de promocao
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+        run: |
+          # feature/* -> develop -> homol -> staging -> main. hotfix/* pode ir
+          # direto para main, e depois volta para develop por PR.
+          case "$BASE" in
+            main)    [[ "$HEAD" == staging || "$HEAD" == hotfix/* ]] ;;
+            staging) [[ "$HEAD" == homol || "$HEAD" == hotfix/* ]] ;;
+            homol)   [[ "$HEAD" == develop || "$HEAD" == hotfix/* ]] ;;
+            develop) [[ "$HEAD" != main && "$HEAD" != staging && "$HEAD" != homol ]] ;;
+            *)       true ;;
+          esac || { echo "::error::PR de '$HEAD' para '$BASE' fora do fluxo feature -> develop -> homol -> staging -> main"; exit 1; }
+          echo "fluxo ok: $HEAD -> $BASE"
+
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - name: Formatacao (prettier)
+        run: pnpm format:check
+      - name: Lint (eslint)
+        run: pnpm lint
+      - name: Tipos (tsc)
+        run: pnpm typecheck
+      - name: Codigo morto e dependencias sobrando (knip)
+        run: pnpm knip
+      - name: Build das 6 zonas
+        env:
+          VITE_API_URL: https://example.supabase.co
+          VITE_ANON_KEY: ci
+          VITE_APP_VERSION: ${{ github.sha }}
+        run: pnpm build
+
+  edge-functions:
+    name: edge-functions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.1.4 # a mesma do Makefile: fmt estavel entre maquina e CI
+      - name: Formatacao (deno fmt)
+        run: deno fmt --check supabase/functions
+      - name: Lint (deno lint)
+        run: deno lint supabase/functions
+      - name: Tipos (deno check)
+        run: deno check supabase/functions/{tenancy,iam,crm,projects,billing}/index.ts
+
+  migrations:
+    name: migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - name: Aplicar todas as migrations num Postgres Supabase limpo
+        run: pnpm exec supabase db start
+      - name: Lint do banco (plpgsql_check)
+        run: pnpm exec supabase db lint --level warning --fail-on error
+      - name: Nomes de migration em ordem e sem duplicidade
+        run: |
+          dup="$(ls supabase/migrations | sed -nE 's/^([0-9]+)_.*/\1/p' | sort | uniq -d)"
+          [[ -z "$dup" ]] || { echo "::error::versao de migration repetida: $dup"; exit 1; }
+
+  drift:
+    name: drift
+    runs-on: ubuntu-latest
+    # PR de fork nao recebe segredos; o check seria vermelho sem motivo.
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - name: Drift contra o banco que este PR vai atingir
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          # main -> projeto de producao; demais branches -> projeto de dev.
+          REF: ${{ github.base_ref == 'main' && vars.SUPABASE_REF_PROD || vars.SUPABASE_REF_DEV }}
+        run: scripts/deploy/supabase-drift.sh "$REF" --allow-pending
+
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

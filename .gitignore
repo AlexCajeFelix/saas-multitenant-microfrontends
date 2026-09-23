@@ -1,14 +1,44 @@
+# ---------------------------------------------------------------------------
+# Segredos. Nada aqui entra no git, nunca. Os valores reais vivem em:
+#   GitHub  -> Settings > Environments (dev, homol, staging, prod) e Secrets
+#   Vercel  -> gerados no deploy; nenhum segredo e usado no build do front
+# ---------------------------------------------------------------------------
 .env
-.env.local
-node_modules/
-.DS_Store
-volumes/
-*.log
-.deno_cache/
+.env.*
+!.env.example
+!.env.local.example
+*.pem
+*.key
+supabase/.env
+supabase/functions/.env
+supabase/.env.keys
 
-# Frontend
-web/node_modules/
-web/dist/
-web/.env.local
-web/.env
-web/*.tsbuildinfo
+# Estado local de CLIs (contem ids de projeto, tokens temporarios, links)
+.vercel/
+supabase/.branches/
+supabase/.temp/
+.claude/settings.local.json
+
+# Dependencias e caches
+node_modules/
+.pnpm-store/
+.turbo/
+.deno_cache/
+.eslintcache
+*.tsbuildinfo
+
+# Builds
+dist/
+apps/*/dist/
+coverage/
+
+# Stack local do docker compose
+volumes/
+
+# Sistema e editores
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json

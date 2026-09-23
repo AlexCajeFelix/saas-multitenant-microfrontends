@@ -1,0 +1,39 @@
+{
+  "name": "saas-multitenant",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "eslint --max-warnings=0 .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "knip": "knip",
+    "quality": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm knip"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "knip": "^6.37.0",
+    "prettier": "^3.9.8",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "supabase": "^2.117.0",
+    "turbo": "^2.11.3",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vercel": "^59.25.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "supabase",
+      "esbuild"
+    ]
+  }
+}

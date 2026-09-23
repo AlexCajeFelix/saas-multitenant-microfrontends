@@ -1,10 +1,4 @@
-import {
-  AggregateRoot,
-  BusinessRuleError,
-  Email,
-  Guard,
-  Slug,
-} from "../../_shared/mod.ts";
+import { AggregateRoot, BusinessRuleError, Email, Guard, Slug } from "../../_shared/mod.ts";
 import {
   InvitationAccepted,
   MemberInvited,

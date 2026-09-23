@@ -70,8 +70,11 @@ export class BillingContainer {
   }
 
   get logger(): Logger {
-    return this.lazy("logger", () =>
-      this.runtime.logger.child({ requestId: this.ctx.requestId, tenantId: this.ctx.tenantId }));
+    return this.lazy(
+      "logger",
+      () =>
+        this.runtime.logger.child({ requestId: this.ctx.requestId, tenantId: this.ctx.tenantId }),
+    );
   }
   get clock(): Clock {
     return this.runtime.clock;
@@ -173,8 +176,7 @@ export class BillingContainer {
   get cancelSubscription(): CancelSubscriptionUseCase {
     return this.lazy(
       "cancelSubscription",
-      () =>
-        new CancelSubscriptionUseCase(this.subscriptions, this.clock, this.events, this.audit),
+      () => new CancelSubscriptionUseCase(this.subscriptions, this.clock, this.events, this.audit),
     );
   }
   get recordUsage(): RecordUsageUseCase {

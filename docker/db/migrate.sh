@@ -16,6 +16,9 @@ while [ "$(psql -tAc "select to_regclass('auth.users') is not null")" != "t" ]; 
   sleep 2
 done
 
+echo "==> bootstrap.sql (papeis e helpers que o Supabase gerenciado ja traz)"
+psql -v ON_ERROR_STOP=1 -v pgpass="$POSTGRES_PASSWORD" -q -o /dev/null -f /opt/db/bootstrap.sql
+
 for file in /supabase/migrations/*.sql; do
   echo "==> $(basename "$file")"
   psql -v ON_ERROR_STOP=1 -v pgpass="$POSTGRES_PASSWORD" -q -o /dev/null -f "$file"

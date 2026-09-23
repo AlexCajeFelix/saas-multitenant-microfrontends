@@ -1,12 +1,12 @@
 import {
+  type AuditTrail,
   BaseUseCase,
   BusinessRuleError,
-  ConflictError,
-  NotFoundError,
-  type AuditTrail,
   type Clock,
+  ConflictError,
   type EventPublisher,
   type IdGenerator,
+  NotFoundError,
   type RequestContext,
 } from "../../../_shared/mod.ts";
 import { Role } from "../../domain/entities.ts";

@@ -1,0 +1,24 @@
+{
+  "name": "@saas/iam",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@saas/platform": "workspace:*",
+    "@tanstack/react-query": "^5.103.2",
+    "lucide-react": "^1.47.0",
+    "react": "^19.3.0",
+    "react-router-dom": "^7.18.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "vite": "^8.3.0",
+    "typescript": "~6.0.3"
+  }
+}

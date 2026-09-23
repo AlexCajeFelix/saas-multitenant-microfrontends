@@ -73,8 +73,11 @@ export class TenancyContainer {
 
   // --- infraestrutura ------------------------------------------------------
   get logger(): Logger {
-    return this.lazy("logger", () =>
-      this.runtime.logger.child({ requestId: this.ctx.requestId, tenantId: this.ctx.tenantId }));
+    return this.lazy(
+      "logger",
+      () =>
+        this.runtime.logger.child({ requestId: this.ctx.requestId, tenantId: this.ctx.tenantId }),
+    );
   }
   get clock(): Clock {
     return this.runtime.clock;

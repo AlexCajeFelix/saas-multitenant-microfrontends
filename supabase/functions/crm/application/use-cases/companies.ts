@@ -1,6 +1,6 @@
 import {
-  BaseUseCase,
   type AuditTrail,
+  BaseUseCase,
   type Clock,
   type EventPublisher,
   type IdGenerator,

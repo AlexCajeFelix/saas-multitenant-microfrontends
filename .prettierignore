@@ -1,0 +1,10 @@
+dist
+.vercel
+.turbo
+pnpm-lock.yaml
+# Deno formata as Edge Functions e os testes (deno fmt).
+supabase
+tests
+# Arquivos gerados ou de terceiros
+http
+*.md
