@@ -31,18 +31,26 @@ echo "==> vinculando ao projeto $ref"
 supabase link --project-ref "$ref" ${SUPABASE_DB_PASSWORD:+--password "$SUPABASE_DB_PASSWORD"} >/dev/null
 
 echo "==> historico de migrations (local x remoto)"
-listing="$(supabase migration list --linked 2>/dev/null)"
-echo "$listing"
+listing="$(supabase migration list --linked --output-format json 2>/dev/null)"
 
-# Linhas da tabela: " local | remoto | hora "
+# {"migrations":[{"local":"0001","remote":"0001"}, ...]}: uma versao so de um
+# lado e o que interessa. Sai uma linha "remote_only|pending" por versao.
+parsed="$(node -e '
+  let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+    const rows = JSON.parse(s.slice(s.indexOf("{"))).migrations ?? [];
+    for (const { local, remote } of rows) {
+      if (!local && remote) console.log(`remote_only ${remote}`);
+      if (local && !remote) console.log(`pending ${local}`);
+    }
+    console.error(`    ${rows.length} versoes no historico`);
+  });' <<< "$listing")"
+
 remote_only=()
 pending=()
-while IFS='|' read -r local remote _; do
-  local="$(echo "$local" | xargs)"; remote="$(echo "$remote" | xargs)"
-  [[ "$local" =~ ^[0-9]+$ || "$remote" =~ ^[0-9]+$ ]] || continue
-  if [[ -z "$local" && -n "$remote" ]]; then remote_only+=("$remote"); fi
-  if [[ -n "$local" && -z "$remote" ]]; then pending+=("$local"); fi
-done <<< "$listing"
+while read -r kind version; do
+  [[ "$kind" == remote_only ]] && remote_only+=("$version")
+  [[ "$kind" == pending ]] && pending+=("$version")
+done <<< "$parsed"
 
 status=0
 summary "### Drift do banco ($ref)"
@@ -70,8 +78,13 @@ fi
 # diff so faz sentido comparando historicos iguais.
 if (( ${#pending[@]} == 0 && ${#remote_only[@]} == 0 )); then
   echo "==> comparando o schema real com o das migrations"
-  diff_out="$(supabase db diff --linked --schema public,core,iam,crm,projects,billing 2>/dev/null || true)"
-  if [[ -n "$(echo "$diff_out" | grep -vE '^\s*(--.*)?$' || true)" ]]; then
+  # `-f` so grava arquivo quando ha diferenca: nao depende do formato da saida.
+  before="$(ls supabase/migrations)"
+  supabase db diff --linked --schema public,core,iam,crm,projects,billing -f drift_check >/dev/null
+  drift_file="$(comm -13 <(echo "$before") <(ls supabase/migrations) | head -1)"
+  if [[ -n "$drift_file" ]]; then
+    diff_out="$(cat "supabase/migrations/$drift_file")"
+    rm -f "supabase/migrations/$drift_file"
     echo "::error::Schema do banco diverge das migrations (drift)"
     echo "$diff_out"
     summary "- :x: schema diverge das migrations:"

@@ -56,8 +56,9 @@ prod_flag=()
 [[ "$env" == "prod" ]] && prod_flag=(--prod)
 
 echo "==> publicando $zone ($env)"
-url="$(vercel deploy "$dist" --yes "${prod_flag[@]}" \
-  --meta "sha=${GITHUB_SHA:-local}" --meta "env=$env" --meta "zone=$zone")"
+url="$(vercel deploy "$dist" --yes --format json "${prod_flag[@]}" \
+  --meta "sha=${GITHUB_SHA:-local}" --meta "env=$env" --meta "zone=$zone" |
+  node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const r=JSON.parse(s);if(r.deployment?.readyState!=="READY"){console.error(s);process.exit(1)}process.stdout.write(r.deployment.url)})')"
 
 host="$(node "$root/scripts/deploy/hosts.mjs" "$zone" "$env")"
 echo "==> alias $host -> $url"
