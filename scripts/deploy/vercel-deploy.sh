@@ -52,6 +52,12 @@ curl -fsS -X PATCH "https://api.vercel.com/v9/projects/$project_id$team_query" \
   -d '{"framework":null,"buildCommand":"","installCommand":"","outputDirectory":null,"ssoProtection":null}' \
   >/dev/null
 
+# O `vercel link` conecta o projeto ao repositorio Git quando acha um remote, e
+# a Vercel passaria a buildar sozinha a cada push, fora da ordem do Recreate.
+# Quem publica e so este pipeline, entao desconectamos.
+curl -sS -X DELETE "https://api.vercel.com/v9/projects/$project_id/link$team_query" \
+  -H "Authorization: Bearer $VERCEL_TOKEN" >/dev/null || true
+
 prod_flag=()
 [[ "$env" == "prod" ]] && prod_flag=(--prod)
 
