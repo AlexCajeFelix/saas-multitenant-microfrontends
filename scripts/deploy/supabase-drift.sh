@@ -80,17 +80,32 @@ if (( ${#pending[@]} == 0 && ${#remote_only[@]} == 0 )); then
   echo "==> comparando o schema real com o das migrations"
   # `-f` so grava arquivo quando ha diferenca: nao depende do formato da saida.
   before="$(ls supabase/migrations)"
-  supabase db diff --linked --schema public,core,iam,crm,projects,billing -f drift_check >/dev/null
+  diff_log="$(mktemp)"
+  if ! supabase db diff --linked --schema public,core,iam,crm,projects,billing -f drift_check >"$diff_log" 2>&1; then
+    # Falha de execucao (conexao, Docker...) nao e drift: diz o que houve.
+    reason="$(grep -iE 'error|failed|fatal' "$diff_log" | tail -3)"
+    echo "::error::Nao consegui comparar o schema (isto NAO e drift): ${reason:-veja o log acima}"
+    tail -20 "$diff_log"
+    summary "- :warning: nao consegui comparar o schema (erro de execucao, nao drift):"
+    summary '```'
+    summary "${reason:-sem detalhe}"
+    summary '```'
+    [[ -z "${SUPABASE_DB_PASSWORD:-}" ]] &&
+      summary "  Dica: defina SUPABASE_DB_PASSWORD; o login temporario do CLI pode expirar durante o diff."
+    exit 1
+  fi
   drift_file="$(comm -13 <(echo "$before") <(ls supabase/migrations) | head -1)"
   if [[ -n "$drift_file" ]]; then
     diff_out="$(cat "supabase/migrations/$drift_file")"
     rm -f "supabase/migrations/$drift_file"
-    echo "::error::Schema do banco diverge das migrations (drift)"
+    echo "::error::DRIFT: o banco tem mudancas que nao estao nas migrations. SQL que falta no repositorio (esta no resumo do job):"
     echo "$diff_out"
-    summary "- :x: schema diverge das migrations:"
+    echo "Para corrigir: crie uma migration com esse SQL (supabase migration new <nome>) ou desfaca a mudanca no banco."
+    summary "- :x: **drift**: o banco tem mudancas fora das migrations. SQL que falta no repositorio:"
     summary '```sql'
     summary "$diff_out"
     summary '```'
+    summary "  Corrija criando uma migration com esse SQL ou desfazendo a mudanca no banco."
     status=1
   else
     summary "- :white_check_mark: schema identico ao das migrations"
