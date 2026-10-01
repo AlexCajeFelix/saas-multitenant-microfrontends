@@ -69,7 +69,14 @@ web-build: web-env ## Type-check e build de producao das 6 zonas
 quality: ## Formatacao, lint, tipos e codigo morto (o mesmo job do CI)
 	@pnpm quality
 
+backup: ## Dump do banco do Supabase em backups/<env>/ (ENV=dev|prod, padrao dev)
+	@bash scripts/backup/db-backup.sh $(or $(ENV),dev)
+
+restore: ## Restaura um backup e APAGA o estado atual: make restore ENV=dev FROM=backups/dev/<data>
+	@[ -n "$(FROM)" ] || { echo "informe FROM=backups/<env>/<data>"; exit 2; }
+	@bash scripts/backup/db-restore.sh $(or $(ENV),dev) $(FROM)
+
 restart-functions: ## Recarrega o runtime das Edge Functions
 	@$(COMPOSE) restart functions
 
-.PHONY: help keys up down reset migrate seed logs ps psql test check smoke restart-functions web web-env web-build quality
+.PHONY: help keys up down reset migrate seed logs ps psql test check smoke backup restore restart-functions web web-env web-build quality
