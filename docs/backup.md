@@ -1,14 +1,18 @@
 # Backup e restore do banco
 
-O plano free do Supabase nao tem backup que de para baixar. Este guia cobre o
-nosso: `pg_dump` dos projetos dev e prod numa pasta local, e um restore que
-devolve o banco ao estado do dump, conferido tabela por tabela. Custo zero:
-roda na sua maquina, com o Postgres 17 em Docker.
+O plano free do Supabase nao tem backup. O Pro tem um backup diario e guarda
+os ultimos 7 dias. Este guia cobre o equivalente local e de graca: um
+`pg_dump` diario dos projetos dev e prod numa pasta desta maquina, com os 7
+ultimos guardados, e um restore que devolve o banco a qualquer um deles,
+conferido tabela por tabela. O Postgres 17 roda em Docker.
 
 ```bash
-make backup ENV=prod                                    # dump em backups/prod/<data UTC>/
-DRY_RUN=1 make restore ENV=dev FROM=backups/dev/<data>  # ensaio: restaura, confere e desfaz
-make restore ENV=dev FROM=backups/dev/<data>            # restaura de verdade (pede confirmacao)
+make backup-schedule                       # liga o backup automatico diario (crontab)
+make backups ENV=prod                      # lista os pontos de restauracao
+make restore ENV=prod FROM=2026-10-01      # restaura (pede para digitar o ambiente)
+make restore ENV=prod                      # o mais recente (FROM=latest)
+DRY_RUN=1 make restore ENV=dev FROM=...    # ensaio: restaura, confere e desfaz
+make backup ENV=prod                       # backup manual, na hora
 ```
 
 homol e staging usam o banco de dev, entao os ambientes de backup sao so `dev`
@@ -26,12 +30,12 @@ chmod 600 .env.backup
 Preencha `SUPABASE_DB_PASSWORD_DEV` e `SUPABASE_DB_PASSWORD_PROD` com a senha
 do usuario `postgres` de cada projeto, a mesma dos secrets de mesmo nome no
 GitHub. A conexao e pelo pooler em modo sessao
-(`aws-0-sa-east-1.pooler.supabase.com:5432`). Ele e IPv4. O host direto
-`db.<ref>.supabase.co` so tem IPv6 no plano free.
+(`aws-0-sa-east-1.pooler.supabase.com:5432`), que e IPv4: o host direto
+`db.<ref>.supabase.co` so tem IPv6 no plano free. Variaveis passadas na linha
+de comando ganham do arquivo (`BACKUP_KEEP=3 make backup`).
 
-A senha so pode ser trocada pelo Dashboard ou pela Management API. O Supabase
-recusa `alter role postgres` vindo de SQL. Para trocar pela API, com um token
-pessoal (`sbp_...`):
+A senha so muda pelo Dashboard ou pela Management API. O Supabase recusa
+`alter role postgres` vindo de SQL. Com um token pessoal (`sbp_...`):
 
 ```bash
 curl -X PATCH "https://api.supabase.com/v1/projects/<ref>/database/password" \
@@ -41,30 +45,55 @@ curl -X PATCH "https://api.supabase.com/v1/projects/<ref>/database/password" \
 
 Depois atualize o `.env.backup` e os secrets do GitHub:
 `SUPABASE_DB_PASSWORD_DEV`/`_PROD` no repositorio e `SUPABASE_DB_PASSWORD` nos
-environments dev, homol, staging e prod. O pooler pode levar alguns segundos
-para aceitar a senha nova.
+environments dev, homol, staging e prod.
+
+## Automatico, como no Pro
+
+`make backup-schedule` poe no crontab uma linha que chama
+`scripts/backup/db-auto.sh` de hora em hora. Para cada ambiente de
+`BACKUP_ENVS`, se a ultima verificacao tem mais de `BACKUP_INTERVAL_HOURS`
+(24), ele:
+
+1. pergunta ao banco se algo mudou desde o ultimo backup. A consulta roda no
+   servidor e devolve ~100 bytes: os contadores de linhas inseridas, alteradas
+   e apagadas, um md5 da estrutura e a hora em que o Postgres subiu (se ele
+   reiniciou, os contadores zeram, e na duvida faz backup);
+2. se mudou, faz o dump. Se nao mudou, so registra a verificacao.
+
+Rodar de hora em hora, e nao uma vez por dia, garante o backup mesmo que a
+maquina estivesse desligada no horario. Se falhar (sem internet, ou o projeto
+pausado pelo plano free depois de 7 dias sem uso), ele tenta de novo na hora
+seguinte. Tudo vai para `backups/backup.log`. `make backup-unschedule`
+desliga.
+
+### Retencao
+
+Ficam os `BACKUP_KEEP` (7) backups mais recentes de cada ambiente. O mais
+antigo so e apagado **depois** que o novo terminou e foi conferido, entao nunca
+existem menos de 7 pontos validos.
+
+A contagem e por quantidade, nao por dias. Como dias sem mudanca nao geram
+backup, contar dias apagaria justamente o unico backup que vale quando o banco
+fica parado. Com o banco mudando todo dia, sao os ultimos 7 dias, como no Pro.
+Com o banco parado, os 7 continuam la, cobrindo mais tempo.
 
 ## O que entra no backup
 
-Cada execucao cria `backups/<env>/<data UTC>/`, com permissao 700:
+Cada backup e uma pasta `backups/<env>/<data UTC>/`, com permissao 700:
 
 | Arquivo | Conteudo |
 |---|---|
-| `app.dump` | schemas `public`, `core`, `iam`, `crm`, `projects`, `billing`: estrutura e dados, incluindo policies, grants e triggers |
-| `platform.dump` | so os dados de `auth` (usuarios, identidades, sessoes, com os hashes de senha) e de `supabase_migrations` (o historico que o health check e o drift leem) |
+| `db.dump` | um `pg_dump` so, uma foto consistente do banco: estrutura e dados de `public`, `core`, `iam`, `crm`, `projects`, `billing` (policies, grants e triggers inclusos), mais os dados de `auth` (usuarios, identidades, sessoes, com os hashes de senha) e de `supabase_migrations` |
 | `counts.tsv` | linhas por tabela, contadas no proprio dump. Prova que o arquivo le de ponta a ponta |
-| `SHA256SUMS` | integridade. O restore recusa um dump alterado |
+| `state` | o estado do banco no backup, para o "mudou?" do proximo |
+| `SHA256SUMS` | integridade. O restore recusa um backup alterado |
 
 Ficam de fora, de proposito:
-- `auth.schema_migrations`, que e do GoTrue e acompanha a versao dele, nao o
-  backup;
+- `auth.schema_migrations`, que e do GoTrue e acompanha a versao dele;
 - a estrutura de `auth`, `storage`, `realtime` etc., que e da plataforma;
 - tudo o que nao mora no Postgres: arquivos do Storage (a aplicacao nao usa),
   configuracoes do projeto (Auth, schemas expostos na API), Edge Functions e
   seus secrets. Esses vem do repositorio e do pipeline de deploy.
-
-Backups com mais de `BACKUP_KEEP_DAYS` dias (padrao 30) sao apagados a cada
-execucao.
 
 ## Como o restore funciona
 
@@ -73,19 +102,24 @@ transacao:
 
 1. derruba os schemas da aplicacao e os objetos de `public` que o dump recria;
 2. esvazia as tabelas de `auth` e o historico de migrations;
-3. cria a estrutura (tabelas, tipos, funcoes) a partir do `app.dump`;
-4. carrega os dados de `auth`. Vem antes dos dados da aplicacao porque
-   `core.memberships` aponta para `auth.users`;
+3. cria a estrutura (tabelas, tipos, funcoes);
+4. carrega os dados de `auth`, na ordem das FKs (`users` antes de
+   `identities`). As tabelas de `auth` ja existem com as FKs valendo, entao a
+   ordem sai das FKs do proprio dump, via `tsort`. Vem antes dos dados da
+   aplicacao porque `core.memberships` aponta para `auth.users`;
 5. carrega os dados da aplicacao;
 6. cria indices, FKs, triggers, policies e grants;
 7. confere a contagem de cada tabela com o `counts.tsv`. Se alguma diferir, a
    transacao e desfeita;
-8. avisa o PostgREST para recarregar o schema e faz o commit.
+8. ajusta as sequencias. Nunca ficam abaixo do maior id restaurado, mesmo que
+   o dump tenha pego uma sequencia atrasada;
+9. avisa o PostgREST para recarregar o schema e faz o commit.
 
-Se qualquer passo falhar, o banco fica exatamente como estava. Com `DRY_RUN=1`
-o script faz tudo e confere, mas termina em `rollback`: serve para ensaiar o
-restore, inclusive o de um dump de prod sobre o banco de dev, sem efeito. Mesmo
-assim o ensaio segura locks nas tabelas por alguns segundos.
+Se qualquer passo ate o 7 falhar, o banco fica exatamente como estava. As
+sequencias ficam para o passo 8, depois da conferencia, porque `setval` nao e
+transacional: um rollback nao o desfaz. Pelo mesmo motivo o ensaio
+(`DRY_RUN=1`) faz os passos 1 a 7 e desfaz, sem nunca chegar no 8: nao deixa
+efeito nenhum. Mesmo assim ele segura locks nas tabelas por alguns segundos.
 
 So voltam do dump os objetos do usuario `postgres`. O resto e da plataforma: o
 schema `public` (de `pg_database_owner`) e os default privileges do
@@ -103,33 +137,44 @@ Se o projeto se perder de vez:
 O restore recria os schemas sozinho, entao as migrations nao precisam ter
 rodado antes. Se o deploy ja as aplicou, o restore as substitui.
 
-## Agendar
+## Egress
 
-Para um backup diario de prod as 3h, com `crontab -e`:
+O plano free tem 5 GB/mes de egress somados entre todos os servicos. O dump
+aparece no painel como "Shared Pooler Egress". Medido em 2026-10-01, com o
+banco de ~12 MB:
 
-```cron
-0 3 * * * cd /caminho/do/repo && make backup ENV=prod >> backups/cron.log 2>&1
-```
+| Operacao | Egress |
+|---|---|
+| verificacao "mudou?" | 5 KB |
+| backup completo | 1,2 MB, quase tudo metadado: o `pg_dump` le o catalogo inteiro |
+| restore | ~84 KB (o restore envia dados, e entrada nao conta) |
 
-O plano free pausa o projeto depois de 7 dias sem uso. Com o projeto pausado o
-backup falha na conexao. Reative pelo Dashboard e rode de novo.
+Backup diario de dev e prod com o banco mudando todo dia: ~75 MB/mes (1,5% da
+cota). Nos dias sem mudanca, 5 KB. O protocolo do Postgres nao comprime: com o
+banco grande, cada backup puxa mais ou menos o tamanho dos dados. Perto de
+~150 MB, o diario sozinho passaria da cota do free.
 
-## Teste de restauracao (2026-10-01, dev)
+## Testes de restauracao (2026-10-01, dev)
 
-Foi um teste destrutivo de verdade no projeto de dev:
+Os dois testes foram destrutivos de verdade, no projeto de dev. Em cada um:
+impressao digital do banco (md5 de 618 itens de estrutura e do conteudo das 52
+tabelas), apagar os 5 schemas, `public.schema_version()`, todos os usuarios do
+Auth e o historico de migrations (a API passou a falhar e o login a dar
+`invalid_credentials`), restaurar e comparar.
 
-1. `make backup ENV=dev`: 52 tabelas e 215 linhas em 3 s, 204 KB;
-2. impressao digital do banco: md5 de 618 itens de estrutura (colunas,
-   constraints, indices, policies, RLS, triggers, funcoes, tipos, grants) e do
-   conteudo das 52 tabelas;
-3. apagados os 5 schemas da aplicacao, `public.schema_version()`, todos os
-   usuarios do Auth e o historico de migrations. A API passou a responder 404 no
-   `rpc/schema_version` e o login passou a dar `invalid_credentials`;
-4. `make restore ENV=dev FROM=...`: 9 s, 52 tabelas e 215 linhas conferidas;
-5. impressao digital identica a de antes, na estrutura e nos dados. O login
-   voltou com a senha de antes e `tenancy/tenants`, `iam/whoami` e
-   `billing/plans` responderam 200 com RLS.
+1. **Formato com dois dumps:** 9 s; impressao digital identica; login e Edge
+   Functions ok.
+2. **Formato de dump unico:** 6 s; impressao digital identica. Este teste
+   achou dois bugs, ja corrigidos:
+   - os dados de `auth` precisavam entrar na ordem das FKs (o ensaio pegou,
+     sem efeito);
+   - ensaios anteriores tinham voltado a sequencia de `auth.refresh_tokens`
+     (`setval` nao e transacional), e o login dava chave duplicada. Corrigido
+     com as sequencias no fim, fora do ensaio, e nunca abaixo do maior id. O
+     restore do backup que tinha capturado a sequencia atrasada a corrigiu: o
+     login voltou e a impressao digital ficou identica.
 
-Um dump com 1 byte alterado foi recusado na conferencia do SHA256, antes de
-tocar no banco. O dump de prod do mesmo dia passou no ensaio (`DRY_RUN=1`)
-sobre o banco de dev.
+Tambem testado: um dump com 1 byte alterado e recusado no SHA256 antes de tocar
+no banco; o ensaio nao muda a sequencia; o dump de prod passa no ensaio sobre
+o banco de dev; a retencao mantem os 7 mais recentes; o `db-auto.sh` funciona
+no ambiente minimo do cron.

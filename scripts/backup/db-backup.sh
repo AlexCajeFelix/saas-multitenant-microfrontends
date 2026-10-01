@@ -2,15 +2,20 @@
 # ===========================================================================
 # Backup do Postgres de um projeto Supabase numa pasta local.
 #
-#   scripts/backup/db-backup.sh <dev|prod>        (ou: make backup ENV=prod)
+#   scripts/backup/db-backup.sh <dev|prod> [--if-changed]
+#   (ou: make backup ENV=prod)
 #
 # Gera backups/<env>/<data UTC>/ com:
-#   app.dump       schemas da aplicacao, estrutura + dados (pg_dump -Fc)
-#   platform.dump  dados de auth (usuarios, identidades...) e o historico de
-#                  migrations; a estrutura desses schemas e do Supabase
-#   counts.tsv     linhas por tabela, contadas no proprio dump
-#   SHA256SUMS     integridade dos arquivos (o restore confere)
-# e apaga as pastas com mais de BACKUP_KEEP_DAYS dias (padrao 30).
+#   db.dump     um pg_dump so (uma foto consistente do banco): estrutura e dados
+#               dos schemas da aplicacao, mais os dados de auth e do historico
+#               de migrations (a estrutura desses e do Supabase)
+#   counts.tsv  linhas por tabela, contadas no proprio dump
+#   state       estado do banco no momento do backup (veja state_sql)
+#   SHA256SUMS  integridade dos arquivos (o restore confere)
+# e mantem so os BACKUP_KEEP backups mais recentes (padrao 7).
+#
+# --if-changed: antes do dump, compara o estado do banco (~100 bytes de
+# egress) com o do ultimo backup e pula se nada mudou. E o modo do agendamento.
 #
 # Conexao: SUPABASE_REF_<ENV> e SUPABASE_DB_PASSWORD_<ENV> no .env.backup (fora
 # do git). O pg_dump 17 roda em Docker: nao precisa de Postgres instalado.
@@ -20,48 +25,55 @@
 # shellcheck disable=SC2016
 set -euo pipefail
 
-env="${1:?uso: db-backup.sh <dev|prod>}"
+env="${1:?uso: db-backup.sh <dev|prod> [--if-changed]}"
+mode="${2:-}"
 # shellcheck source=scripts/backup/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 load_env "$env"
 
+base="$BACKUP_DIR/$env"
+mkdir -p "$base"
+chmod 700 "$BACKUP_DIR" "$base"
+
+state="$(psql_db "$base" "$(state_sql)")"
+last="$(list_backups "$env" | tail -1)"
+if [[ "$mode" == --if-changed && -n "$last" && -f "$last/state" && "$(cat "$last/state")" == "$state" ]]; then
+  echo "==> $env: nada mudou desde o backup $(basename "$last"); pulando"
+  exit 0
+fi
+
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-dest="$BACKUP_DIR/$env/$stamp"
-mkdir -p "$dest"
-chmod 700 "$BACKUP_DIR" "$BACKUP_DIR/$env" "$dest"
+dest="$base/$stamp"
+mkdir -m 700 "$dest"
 # Pasta incompleta nao pode parecer backup valido.
 trap 'echo "backup falhou; removendo $dest" >&2; rm -rf "$dest"' ERR
 
-echo "==> $env: conferindo a conexao"
-psql_db "$dest" "select 'postgres ' || current_setting('server_version') || ', ' || pg_size_pretty(pg_database_size(current_database()))" |
-  sed 's/^/    /'
+args=()
+for s in "${APP_SCHEMAS[@]}" "${PLATFORM_SCHEMAS[@]}"; do args+=(--schema="$s"); done
+for t in "${EXCLUDE_DATA[@]}"; do args+=(--exclude-table-data="$t"); done
 
-schema_args=(); for s in "${APP_SCHEMAS[@]}"; do schema_args+=(--schema="$s"); done
-platform_args=(); for s in "${PLATFORM_SCHEMAS[@]}"; do platform_args+=(--schema="$s"); done
-for t in "${PLATFORM_EXCLUDE[@]}"; do platform_args+=(--exclude-table="$t"); done
+echo "==> $env: pg_dump de ${APP_SCHEMAS[*]} e dos dados de ${PLATFORM_SCHEMAS[*]}"
+pg "$dest" sh -c 'pg_dump "$DB_URL" "$@" -Fc -Z 9 -f db.dump' _ "${args[@]}"
 
-echo "==> app.dump (${APP_SCHEMAS[*]})"
-pg "$dest" sh -c 'pg_dump "$DB_URL" "$@" -Fc -Z 9 -f app.dump' _ "${schema_args[@]}"
-
-echo "==> platform.dump (dados de ${PLATFORM_SCHEMAS[*]})"
-pg "$dest" sh -c 'pg_dump "$DB_URL" "$@" -Fc -Z 9 --data-only -f platform.dump' _ "${platform_args[@]}"
-
-echo "==> conferindo os arquivos"
-{ dump_counts "$dest" platform.dump; dump_counts "$dest" app.dump; } > "$dest/counts.tsv"
-objects="$(pg "$dest" pg_restore -l app.dump | grep -c '^[0-9]')"
-(cd "$dest" && sha256sum app.dump platform.dump counts.tsv > SHA256SUMS)
+echo "==> conferindo o arquivo"
+dump_counts "$dest" db.dump > "$dest/counts.tsv"
+echo "$state" > "$dest/state"
+(cd "$dest" && sha256sum db.dump counts.tsv state > SHA256SUMS)
 chmod 600 "$dest"/*
 trap - ERR
 
 rows="$(awk -F'\t' '{ s += $2 } END { print s + 0 }' "$dest/counts.tsv")"
-tables="$(wc -l < "$dest/counts.tsv")"
-echo "    $objects objetos, $tables tabelas, $rows linhas, $(du -sh "$dest" | cut -f1)"
+echo "    $(wc -l < "$dest/counts.tsv") tabelas, $rows linhas, $(du -sh "$dest" | cut -f1)"
 
-keep="${BACKUP_KEEP_DAYS:-30}"
-old="$(find "$BACKUP_DIR/$env" -mindepth 1 -maxdepth 1 -type d -name '20*T*Z' -mtime +"$keep" | sort)"
-if [[ -n "$old" ]]; then
-  echo "==> apagando backups com mais de $keep dias"
-  while read -r dir; do echo "    $(basename "$dir")"; rm -rf -- "$dir"; done <<< "$old"
+# Retencao por quantidade, nao por dias: com o --if-changed um banco parado
+# fica dias sem backup novo, e contar dias apagaria justamente o unico que vale.
+mapfile -t all < <(list_backups "$env")
+if (( ${#all[@]} > BACKUP_KEEP )); then
+  echo "==> mantendo os $BACKUP_KEEP mais recentes"
+  for dir in "${all[@]:0:${#all[@]}-BACKUP_KEEP}"; do
+    echo "    apagando $(basename "$dir")"
+    rm -rf -- "$dir"
+  done
 fi
 
 echo "==> pronto: ${dest#"$root"/}"

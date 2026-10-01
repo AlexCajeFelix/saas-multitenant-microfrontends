@@ -56,8 +56,9 @@ make quality    # prettier, eslint, tsc e knip, igual ao CI
 ```
 
 `make help` lista os demais alvos: `down`, `reset`, `migrate`, `logs`, `psql`,
-`check`, `restart-functions`, `web-env`, `backup` e `restore` (estes dois para
-os projetos na nuvem; veja o [guia de backup](docs/backup.md)).
+`check`, `restart-functions`, `web-env`, e os de backup dos projetos na nuvem:
+`backup`, `backups`, `restore` e `backup-schedule` (veja o
+[guia de backup](docs/backup.md)).
 
 Usuarios criados por `make seed`, todos com a senha `Password123!`:
 

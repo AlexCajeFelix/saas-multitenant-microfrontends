@@ -4,7 +4,7 @@ COMPOSE := docker compose
 .DEFAULT_GOAL := help
 
 help: ## Lista os alvos disponiveis
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 keys: ## Cria o .env (se faltar) e gera ANON_KEY / SERVICE_ROLE_KEY
 	@node scripts/generate-keys.mjs .env
@@ -72,11 +72,19 @@ quality: ## Formatacao, lint, tipos e codigo morto (o mesmo job do CI)
 backup: ## Dump do banco do Supabase em backups/<env>/ (ENV=dev|prod, padrao dev)
 	@bash scripts/backup/db-backup.sh $(or $(ENV),dev)
 
-restore: ## Restaura um backup e APAGA o estado atual: make restore ENV=dev FROM=backups/dev/<data>
-	@[ -n "$(FROM)" ] || { echo "informe FROM=backups/<env>/<data>"; exit 2; }
-	@bash scripts/backup/db-restore.sh $(or $(ENV),dev) $(FROM)
+backups: ## Lista os pontos de restauracao (ENV=dev|prod)
+	@bash scripts/backup/db-list.sh $(or $(ENV),dev)
+
+restore: ## Restaura um backup e APAGA o estado atual: make restore ENV=dev FROM=<backup|data|latest>
+	@bash scripts/backup/db-restore.sh $(or $(ENV),dev) $(or $(FROM),latest)
+
+backup-schedule: ## Liga o backup automatico diario de dev e prod (crontab)
+	@bash scripts/backup/schedule.sh on
+
+backup-unschedule: ## Desliga o backup automatico
+	@bash scripts/backup/schedule.sh off
 
 restart-functions: ## Recarrega o runtime das Edge Functions
 	@$(COMPOSE) restart functions
 
-.PHONY: help keys up down reset migrate seed logs ps psql test check smoke backup restore restart-functions web web-env web-build quality
+.PHONY: help keys up down reset migrate seed logs ps psql test check smoke backup backups restore backup-schedule backup-unschedule restart-functions web web-env web-build quality
