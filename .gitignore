@@ -7,6 +7,7 @@
 .env.*
 !.env.example
 !.env.local.example
+!.env.backup.example
 *.pem
 *.key
 supabase/.env
@@ -34,6 +35,9 @@ coverage/
 
 # Stack local do docker compose
 volumes/
+
+# Dumps do banco (scripts/backup): dados reais, nunca no git
+backups/
 
 # Sistema e editores
 .DS_Store

@@ -17,8 +17,9 @@ ambientes (dev, homol, staging, prod) no Supabase e na Vercel.
 O backend esta em `supabase/functions/`, um diretorio por modulo. O frontend
 esta em `apps/` (uma zona por modulo, mais o shell) e `packages/platform` (o
 nucleo compartilhado). O [guia do frontend](docs/frontend.md) explica como ele
-fala com a API, e o [guia de deploy](docs/deploy.md) cobre micro frontends,
-ambientes, pipeline, drift e health check.
+fala com a API, o [guia de deploy](docs/deploy.md) cobre micro frontends,
+ambientes, pipeline, drift e health check, e o [guia de backup](docs/backup.md)
+cobre o dump local dos bancos do Supabase e o restore.
 
 | Ambiente | Branch | Supabase |
 |---|---|---|
@@ -55,7 +56,10 @@ make quality    # prettier, eslint, tsc e knip, igual ao CI
 ```
 
 `make help` lista os demais alvos: `down`, `reset`, `migrate`, `logs`, `psql`,
-`check`, `restart-functions`, `web-env`.
+`check`, `restart-functions`, `web-env`, e os de backup dos projetos na nuvem:
+`backup`, `backups`, `restore`, `backup-schedule` e os do bucket,
+`bucket-list`, `bucket-pull` e `bucket-push` (veja o
+[guia de backup](docs/backup.md)).
 
 Usuarios criados por `make seed`, todos com a senha `Password123!`:
 

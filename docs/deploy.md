@@ -99,6 +99,9 @@ Estrategia **Recreate**: um job, etapas em sequencia, sem blue/green. Se uma
 etapa falha, as seguintes nao rodam. Um deploy por ambiente de cada vez; o
 seguinte espera na fila.
 
+0. **Backup** (so dev): dump do banco no bucket privado `backups` do projeto,
+   com os 7 mais recentes; sem mudanca no banco, nao sobe nada (veja o
+   [guia de backup](backup.md#no-bucket-deploy-de-dev)).
 1. **Banco**: migrations e Edge Functions sobem pela integracao GitHub do
    Supabase (`SUPABASE_DEPLOY_MODE=integration`) ou pelo proprio pipeline
    (`cli`). Depois o pipeline expoe os schemas dos modulos na API e espera
