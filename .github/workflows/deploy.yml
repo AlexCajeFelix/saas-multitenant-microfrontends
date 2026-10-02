@@ -6,7 +6,8 @@
 # Supabase: dev, homol e staging usam o projeto de dev; main usa o de prod.
 #
 # Ordem fixa, cada etapa so comeca se a anterior terminou bem:
-#   1. banco      migrations e Edge Functions (integracao GitHub do Supabase ou
+#   0. backup     so em dev: dump do banco no bucket "backups" do projeto
+#   1. banco     migrations e Edge Functions (integracao GitHub do Supabase ou
 #                 CLI), schemas expostos, espera o banco na ultima migration
 #   2. drift      o schema real tem que bater com o repositorio
 #   3. zonas      build e deploy das 5 zonas, cada uma no alias do ambiente
@@ -81,6 +82,17 @@ jobs:
             echo "::error::Faltando no ambiente '$DEPLOY_ENV': ${missing[*]} (veja docs/deploy.md)"
             exit 1
           fi
+
+      # 0. Backup (so dev) ---------------------------------------------------
+      # Dump do banco no bucket privado "backups" do proprio projeto, com os 7
+      # mais recentes. Baixa o ultimo do bucket e so faz dump novo se o banco
+      # mudou. Sem backup, nao segue. Veja docs/backup.md.
+      - name: Backup do banco no bucket
+        if: env.DEPLOY_ENV == 'dev'
+        env:
+          SUPABASE_REF_DEV: ${{ vars.SUPABASE_PROJECT_REF }}
+          SUPABASE_DB_PASSWORD_DEV: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: scripts/backup/bucket.sh backup dev
 
       - uses: ./.github/actions/setup
 

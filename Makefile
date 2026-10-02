@@ -84,7 +84,16 @@ backup-schedule: ## Liga o backup automatico diario de dev e prod (crontab)
 backup-unschedule: ## Desliga o backup automatico
 	@bash scripts/backup/schedule.sh off
 
+bucket-list: ## Lista os backups no bucket do projeto (ENV=dev|prod)
+	@bash scripts/backup/bucket.sh list $(or $(ENV),dev)
+
+bucket-push: ## Sobe um backup local para o bucket: make bucket-push ENV=dev FROM=<backup|data|latest>
+	@bash scripts/backup/bucket.sh push $(or $(ENV),dev) $(or $(FROM),latest)
+
+bucket-pull: ## Baixa um backup do bucket para backups/<env>/: make bucket-pull ENV=dev FROM=<backup|data|latest>
+	@bash scripts/backup/bucket.sh pull $(or $(ENV),dev) $(or $(FROM),latest)
+
 restart-functions: ## Recarrega o runtime das Edge Functions
 	@$(COMPOSE) restart functions
 
-.PHONY: help keys up down reset migrate seed logs ps psql test check smoke backup backups restore backup-schedule backup-unschedule restart-functions web web-env web-build quality
+.PHONY: help keys up down reset migrate seed logs ps psql test check smoke backup backups restore backup-schedule backup-unschedule bucket-list bucket-push bucket-pull restart-functions web web-env web-build quality
