@@ -1,0 +1,112 @@
+# ===========================================================================
+# O que o Prometheus coleta do ambiente dev. Os alvos (URLs do dev) ficam em
+# /etc/alertas/targets, gerados pelo scripts/alerts/up.sh a partir do
+# .env.alerts; o Prometheus relê esses arquivos sozinho quando mudam.
+#
+# Intervalos pensados nas cotas gratis (ver docs/alertas.md#cotas):
+#   site            2m   6 paginas na Vercel
+#   supabase-api    2m   Auth e PostgREST
+#   edge-functions  4m   5 funcoes; cada sonda e uma invocacao
+#   deploy          4m   API do GitHub sem token (limite de 60/h)
+#   supabase-metrics 1m  o Supabase atualiza as metricas a cada minuto
+# ===========================================================================
+global:
+  scrape_interval: 1m
+  scrape_timeout: 30s
+  evaluation_interval: 1m
+  external_labels:
+    ambiente: dev
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [alertmanager:9093]
+
+rule_files:
+  - alertas.yml
+
+scrape_configs:
+  - job_name: site
+    scrape_interval: 2m
+    metrics_path: /probe
+    file_sd_configs:
+      - files: [/etc/alertas/targets/site.yml]
+    # alvo -> ?target= do blackbox; o rotulo "alvo" vira o instance.
+    relabel_configs: &sonda
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [alvo]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  - job_name: supabase-api
+    scrape_interval: 2m
+    metrics_path: /probe
+    file_sd_configs:
+      - files: [/etc/alertas/targets/supabase-api.yml]
+    relabel_configs: *sonda
+
+  - job_name: edge-functions
+    scrape_interval: 4m
+    metrics_path: /probe
+    file_sd_configs:
+      - files: [/etc/alertas/targets/edge-functions.yml]
+    relabel_configs: *sonda
+
+  - job_name: internet
+    metrics_path: /probe
+    params:
+      module: [internet]
+    static_configs:
+      - targets: [https://www.gstatic.com/generate_204]
+        labels: { alvo: internet }
+    relabel_configs: *sonda
+
+  - job_name: deploy
+    scrape_interval: 4m
+    metrics_path: /probe
+    params:
+      module: [github_deploy]
+    file_sd_configs:
+      - files: [/etc/alertas/targets/deploy.yml]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [alvo]
+        target_label: instance
+      - target_label: __address__
+        replacement: json-exporter:7979
+
+  # Metrics API do Supabase (~200 series do Postgres e da maquina). Sem a
+  # chave secreta, o up.sh deixa este arquivo de alvos vazio.
+  - job_name: supabase-metrics
+    scheme: https
+    metrics_path: /customer/v1/privileged/metrics
+    basic_auth:
+      username: service_role
+      password_file: /run/secrets/supabase_secret_key
+    file_sd_configs:
+      - files: [/etc/alertas/targets/supabase-metrics.yml]
+
+  - job_name: backup
+    honor_labels: true
+    static_configs:
+      - targets: [pushgateway:9091]
+        labels: { alvo: pushgateway }
+
+  # Os proprios componentes: com o blackbox fora, as sondas somem em vez de
+  # falhar, e nenhum alerta de site dispararia. O pushgateway ja e o job
+  # backup, acima.
+  - job_name: alertas
+    static_configs:
+      - targets: [localhost:9090]
+        labels: { alvo: prometheus }
+      - targets: [alertmanager:9093]
+        labels: { alvo: alertmanager }
+      - targets: [blackbox:9115]
+        labels: { alvo: blackbox }
+      - targets: [json-exporter:7979]
+        labels: { alvo: json-exporter }
+      - targets: [ntfy:80]
+        labels: { alvo: ntfy }

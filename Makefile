@@ -93,7 +93,25 @@ bucket-push: ## Sobe um backup local para o bucket: make bucket-push ENV=dev FRO
 bucket-pull: ## Baixa um backup do bucket para backups/<env>/: make bucket-pull ENV=dev FROM=<backup|data|latest>
 	@bash scripts/backup/bucket.sh pull $(or $(ENV),dev) $(or $(FROM),latest)
 
+alerts-up: ## Sobe os alertas do ambiente dev nesta maquina (ntfy em http://localhost:8090/alertas-dev)
+	@bash scripts/alerts/up.sh
+
+alerts-down: ## Desliga os alertas (mantem o historico)
+	@bash scripts/alerts/down.sh
+
+alerts-key: ## Grava a chave secreta do projeto dev, para os alertas de banco
+	@bash scripts/alerts/key.sh
+
+alerts-test: ## Manda um alerta de teste ate o ntfy e o desktop
+	@bash scripts/alerts/test.sh
+
+alerts-status: ## O que os alertas vigiam e o que esta disparando
+	@bash scripts/alerts/status.sh
+
+alerts-check: ## Valida a configuracao e roda os testes das regras de alerta
+	@bash scripts/alerts/check.sh
+
 restart-functions: ## Recarrega o runtime das Edge Functions
 	@$(COMPOSE) restart functions
 
-.PHONY: help keys up down reset migrate seed logs ps psql test check smoke backup backups restore backup-schedule backup-unschedule bucket-list bucket-push bucket-pull restart-functions web web-env web-build quality
+.PHONY: help keys up down reset migrate seed logs ps psql test check smoke backup backups restore backup-schedule backup-unschedule bucket-list bucket-push bucket-pull alerts-up alerts-down alerts-key alerts-test alerts-status alerts-check restart-functions web web-env web-build quality

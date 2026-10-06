@@ -1,0 +1,100 @@
+# ===========================================================================
+# Alertas do ambiente dev, rodando nesta maquina. Suba com `make alerts-up`,
+# que gera os alvos e a chave antes (scripts/alerts/up.sh). Veja docs/alertas.md.
+#
+#   blackbox ──────┐
+#   json-exporter ─┼─▶ prometheus ─▶ alertmanager ─▶ ntfy ─▶ http://localhost:8090/alertas-dev
+#   pushgateway ───┘   (regras)      (agrupa, silencia)  └──▶ notificacao no desktop
+#
+# As portas abrem so em 127.0.0.1. ALERTS_BIND=0.0.0.0 abre o ntfy na rede
+# local, para assinar o topico pelo app do celular.
+# ===========================================================================
+name: saas-alertas
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    container_name: alertas_prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - ./targets:/etc/alertas/targets:ro
+      - prometheus-data:/prometheus
+    secrets:
+      - supabase_secret_key
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.1
+    container_name: alertas_alertmanager
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.external-url=http://localhost:9093
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+
+  # Sondas HTTP: site, Auth, banco pela API e Edge Functions.
+  blackbox:
+    image: prom/blackbox-exporter:v0.28.0
+    container_name: alertas_blackbox
+    restart: unless-stopped
+    command: [--config.file=/etc/blackbox/blackbox.yml]
+    volumes:
+      - ./blackbox:/etc/blackbox:ro
+
+  # Ultimo run do workflow Deploy na branch de dev, pela API publica do GitHub.
+  json-exporter:
+    image: quay.io/prometheuscommunity/json-exporter:v0.8.0
+    container_name: alertas_json_exporter
+    restart: unless-stopped
+    command: [--config.file=/etc/json-exporter/github.yml]
+    volumes:
+      - ./json-exporter:/etc/json-exporter:ro
+
+  # Resultado do backup automatico (scripts/backup/db-auto.sh empurra aqui).
+  pushgateway:
+    image: prom/pushgateway:v1.11.3
+    container_name: alertas_pushgateway
+    restart: unless-stopped
+    command:
+      - --persistence.file=/data/pushgateway.db
+      - --persistence.interval=1m
+    ports:
+      - "127.0.0.1:9091:9091"
+    volumes:
+      - pushgateway-data:/data
+
+  # Onde os alertas chegam: caixa de entrada web, historico de 7 dias.
+  ntfy:
+    image: binwiederhier/ntfy:v2.28.0
+    container_name: alertas_ntfy
+    restart: unless-stopped
+    command: [serve]
+    ports:
+      - "${ALERTS_BIND:-127.0.0.1}:8090:80"
+    volumes:
+      - ./ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ./ntfy/templates:/etc/ntfy/templates:ro
+      - ntfy-cache:/var/cache/ntfy
+
+# Gerada pelo up.sh (vazia sem chave: o job das metricas do banco fica sem alvo).
+secrets:
+  supabase_secret_key:
+    file: ./secrets/supabase-secret-key
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  pushgateway-data:
+  ntfy-cache:

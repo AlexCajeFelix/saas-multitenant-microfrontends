@@ -106,6 +106,16 @@ jobs:
           REF: ${{ github.base_ref == 'main' && vars.SUPABASE_REF_PROD || vars.SUPABASE_REF_DEV }}
         run: scripts/deploy/supabase-drift.sh "$REF" --allow-pending
 
+  # Configuracao dos alertas locais do dev (docs/alertas.md): sintaxe do
+  # Prometheus, do Alertmanager e do blackbox, e os testes das regras.
+  alerts:
+    name: alerts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validar a configuracao e testar as regras
+        run: scripts/alerts/check.sh
+
   secrets:
     name: secrets
     runs-on: ubuntu-latest

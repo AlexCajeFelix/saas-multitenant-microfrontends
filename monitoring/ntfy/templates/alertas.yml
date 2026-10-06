@@ -1,0 +1,18 @@
+# Formato da notificacao. O Alertmanager manda o webhook dele (um grupo de
+# alertas de mesmo nome) para /alertas-dev?template=alertas, e o ntfy monta
+# titulo, texto e prioridade a partir dele. As anotacoes vem das regras em
+# monitoring/prometheus/alertas.yml: `titulo` (igual para o grupo), `summary`
+# e `description` (de cada alerta).
+title: |
+  {{- if eq .status "resolved" }}✅ Resolvido: {{ else if eq .commonLabels.severity "critical" }}🔴 {{ else }}🟡 {{ end -}}
+  {{ or .commonAnnotations.titulo .commonLabels.alertname }}
+  {{- if gt (len .alerts) 1 }} ({{ len .alerts }}){{ end }}
+message: |
+  {{- range .alerts }}
+  {{ if eq .status "resolved" }}✓{{ else }}•{{ end }} {{ or .annotations.summary .labels.alertname }}
+  {{- if and .annotations.description (eq .status "firing") }}
+    {{ .annotations.description }}
+  {{- end }}
+  {{- end }}
+priority: |
+  {{- if eq .status "resolved" }}2{{ else if eq .commonLabels.severity "critical" }}5{{ else }}4{{ end -}}
