@@ -1,0 +1,30 @@
+# ===========================================================================
+# Para onde vao os alertas: o topico alertas-dev do ntfy local, que guarda o
+# historico (http://localhost:8090/alertas-dev) e alimenta a notificacao do
+# desktop (scripts/alerts/desktop.sh). O template alertas, do ntfy, monta o
+# texto a partir do webhook do Alertmanager.
+# ===========================================================================
+route:
+  receiver: ntfy
+  # Uma notificacao por tipo de alerta: tres zonas fora viram uma mensagem.
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  routes:
+    - matchers: [severity="critical"]
+      repeat_interval: 3h
+
+receivers:
+  - name: ntfy
+    webhook_configs:
+      - url: http://ntfy/alertas-dev?template=alertas&click=http%3A%2F%2Flocalhost%3A9093
+        send_resolved: true
+
+inhibit_rules:
+  # Sem internet aqui, o dev nao esta fora: e a rede desta maquina.
+  - source_matchers: [alertname="SemInternet"]
+    target_matchers: [area=~"site|supabase|deploy"]
+  # Projeto inteiro fora (pausado, por exemplo): um alerta so, nao dez.
+  - source_matchers: [alertname="SupabaseDevFora"]
+    target_matchers: [area="supabase", alertname!="SupabaseDevFora"]

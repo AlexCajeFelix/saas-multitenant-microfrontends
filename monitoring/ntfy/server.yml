@@ -1,0 +1,7 @@
+# ntfy local: a caixa de entrada dos alertas, em http://localhost:8090/alertas-dev
+base-url: http://localhost:8090
+listen-http: ":80"
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: 168h
+template-dir: /etc/ntfy/templates
+enable-metrics: true

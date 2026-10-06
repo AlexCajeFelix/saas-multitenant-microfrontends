@@ -1,0 +1,58 @@
+# Sondas HTTP do blackbox exporter. Cada alvo escolhe o modulo pelo
+# __param_module dos arquivos de monitoring/targets/ (gerados pelo up.sh).
+# IPv4 sempre: esta maquina nao tem rota IPv6.
+modules:
+  # Shell: a pagina tem que carregar o bundle do proprio shell.
+  shell:
+    prober: http
+    timeout: 15s
+    http:
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      fail_if_body_not_matches_regexp: ['src="/assets/index-[^"]+\.js"']
+
+  # Rota de uma zona: o rewrite do shell tem que entregar o bundle da zona. Se
+  # o rewrite quebra, a Vercel devolve o index do shell, com 200, e so o corpo
+  # denuncia.
+  zona:
+    prober: http
+    timeout: 15s
+    http:
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      fail_if_body_not_matches_regexp: ['src="/_zones/[a-z]+/assets/']
+
+  supabase_auth:
+    prober: http
+    timeout: 15s
+    http:
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      fail_if_body_not_matches_regexp: ['"name":"GoTrue"']
+
+  # rpc/schema_version passa pelo PostgREST e chega no Postgres.
+  supabase_rest:
+    prober: http
+    timeout: 15s
+    http:
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      fail_if_body_not_matches_regexp: ['^"[0-9]+"$']
+
+  # Edge Function fria pode levar alguns segundos para subir.
+  edge_function:
+    prober: http
+    timeout: 25s
+    http:
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      fail_if_body_not_matches_regexp: ['"status":"ok"']
+
+  # Canario: sem ele, cair a internet desta maquina pareceria o dev fora.
+  internet:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      valid_status_codes: [204]

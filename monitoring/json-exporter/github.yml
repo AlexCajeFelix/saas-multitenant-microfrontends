@@ -1,0 +1,21 @@
+# Ultimo run do workflow Deploy na branch de dev (o alvo, gerado pelo up.sh,
+# e a URL da API com ?branch=develop&per_page=1). Repositorio publico: a API
+# responde sem token, ate 60 consultas por hora por IP; o job consulta 15.
+modules:
+  github_deploy:
+    headers:
+      Accept: application/vnd.github+json
+      X-GitHub-Api-Version: "2022-11-28"
+    metrics:
+      # github_deploy_run{status, conclusion, commit, url} = numero do run
+      - name: github_deploy
+        type: object
+        help: Ultimo run do workflow Deploy na branch do ambiente
+        path: "{.workflow_runs[0]}"
+        labels:
+          status: "{.status}"
+          conclusion: "{.conclusion}"
+          commit: "{.head_sha}"
+          url: "{.html_url}"
+        values:
+          run: "{.run_number}"

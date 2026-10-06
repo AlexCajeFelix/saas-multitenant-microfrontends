@@ -1,0 +1,204 @@
+# ===========================================================================
+# Regras de alerta do ambiente dev. Testadas em alertas_test.yml
+# (make alerts-check). Cada regra leva:
+#   severity  critical (algo do dev esta fora) ou warning (vai dar problema)
+#   area      site, supabase, deploy, backup ou monitoramento; o Alertmanager
+#             silencia site, supabase e deploy quando esta maquina perde a
+#             internet, e o resto do supabase quando o projeto inteiro caiu
+#   titulo    o titulo da notificacao, igual para todos os alertas do grupo
+# ===========================================================================
+groups:
+  - name: site
+    rules:
+      - alert: SiteDevFora
+        expr: probe_success{job="site"} == 0
+        for: 5m
+        labels: { severity: critical, area: site }
+        annotations:
+          titulo: Site de dev fora do ar
+          summary: "{{ $labels.instance }}: {{ $labels.url }}"
+          description: >-
+            Falhando ha 5 min. Sem o bundle certo, o rewrite do shell para a
+            zona pode ter quebrado; sem resposta, olhe o deploy na Vercel.
+
+  - name: supabase
+    rules:
+      - alert: SupabaseDevFora
+        expr: max(probe_success{job="supabase-api"}) == 0
+        for: 5m
+        labels: { severity: critical, area: supabase }
+        annotations:
+          titulo: Projeto Supabase de dev fora do ar
+          summary: Auth e banco (PostgREST) sem resposta ha 5 min
+          description: >-
+            Se o projeto ficou 7 dias sem uso, o plano free o pausou: reative
+            no dashboard (leva ~3 min). Os demais alertas do Supabase ficam
+            calados enquanto este durar.
+
+      - alert: SupabaseApiDevFalhando
+        expr: probe_success{job="supabase-api"} == 0
+        for: 5m
+        labels: { severity: warning, area: supabase }
+        annotations:
+          titulo: API do Supabase de dev falhando
+          summary: "{{ $labels.instance }} falhando ha 5 min ({{ $labels.url }})"
+
+      - alert: EdgeFunctionDevFora
+        expr: probe_success{job="edge-functions"} == 0
+        for: 8m
+        labels: { severity: critical, area: supabase }
+        annotations:
+          titulo: Edge Function de dev fora do ar
+          summary: "{{ $labels.instance }}: /health falhando ha 8 min"
+          description: Veja os logs da funcao no dashboard do Supabase (Edge Functions > Logs).
+
+      - alert: MetricasDoBancoSemAcesso
+        expr: up{job="supabase-metrics"} == 0
+        for: 10m
+        labels: { severity: warning, area: supabase }
+        annotations:
+          titulo: Metricas do banco de dev sem acesso
+          summary: A Metrics API do Supabase recusou ou nao respondeu por 10 min
+          description: >-
+            Se a chave secreta foi trocada ou revogada, grave a nova com
+            `make alerts-key`. Sem metricas, os alertas de banco nao disparam.
+
+      - alert: BancoDevFora
+        expr: pg_up{job="supabase-metrics"} == 0
+        for: 5m
+        labels: { severity: critical, area: supabase }
+        annotations:
+          titulo: Postgres de dev fora do ar
+          summary: O Supabase informa o Postgres de dev parado ha 5 min
+
+      - alert: BancoDevSomenteLeitura
+        expr: pg_settings_default_transaction_read_only{job="supabase-metrics"} == 1
+        for: 2m
+        labels: { severity: critical, area: supabase }
+        annotations:
+          titulo: Banco de dev em modo somente leitura
+          summary: Toda escrita no banco de dev esta sendo recusada
+          description: >-
+            O Supabase faz isso quando o disco passa de 95%. Libere espaco ou
+            aumente o disco no dashboard.
+
+      # 500 MB e o limite do banco no plano free; o alerta vem aos 80%.
+      - alert: BancoDevPertoDoLimite
+        expr: max(pg_database_size_mb{job="supabase-metrics"}) > 400
+        for: 30m
+        labels: { severity: warning, area: supabase }
+        annotations:
+          titulo: Banco de dev perto do limite do plano free
+          summary: '{{ $value | printf "%.0f" }} MB de 500 MB'
+
+      - alert: DiscoDevQuaseCheio
+        expr: >-
+          1 - node_filesystem_avail_bytes{job="supabase-metrics", mountpoint="/data"}
+          / node_filesystem_size_bytes{job="supabase-metrics", mountpoint="/data"} > 0.8
+        for: 30m
+        labels: { severity: warning, area: supabase }
+        annotations:
+          titulo: Disco do banco de dev quase cheio
+          summary: "{{ $value | humanizePercentage }} do disco do banco em uso"
+          description: Aos 95% o Supabase poe o banco em modo somente leitura.
+
+      - alert: ConexoesDevAltas
+        expr: >-
+          sum(pg_stat_database_num_backends{job="supabase-metrics"})
+          / max(pg_settings_max_connections{job="supabase-metrics"}) > 0.8
+        for: 10m
+        labels: { severity: warning, area: supabase }
+        annotations:
+          titulo: Conexoes do banco de dev perto do maximo
+          summary: "{{ $value | humanizePercentage }} das conexoes em uso ha 10 min"
+          description: Perto de 100%, novas conexoes sao recusadas.
+
+      - alert: CpuDevAlta
+        expr: 1 - avg(rate(node_cpu_seconds_total{job="supabase-metrics", mode="idle"}[5m])) > 0.9
+        for: 15m
+        labels: { severity: warning, area: supabase }
+        annotations:
+          titulo: CPU do banco de dev alta
+          summary: "CPU em {{ $value | humanizePercentage }} ha 15 min"
+
+      - alert: MemoriaDevAlta
+        expr: >-
+          1 - node_memory_MemAvailable_bytes{job="supabase-metrics"}
+          / node_memory_MemTotal_bytes{job="supabase-metrics"} > 0.95
+        for: 15m
+        labels: { severity: warning, area: supabase }
+        annotations:
+          titulo: Memoria do banco de dev no limite
+          summary: "Memoria em {{ $value | humanizePercentage }} ha 15 min"
+
+  - name: deploy
+    rules:
+      # A serie muda de rotulos a cada run: o alerta resolve no proximo deploy
+      # que der certo.
+      - alert: DeployDevFalhou
+        expr: github_deploy_run{job="deploy", status="completed", conclusion=~"failure|timed_out|startup_failure"}
+        labels: { severity: critical, area: deploy }
+        annotations:
+          titulo: Deploy de dev falhou
+          summary: 'Run #{{ $value }} ({{ $labels.conclusion }}), commit {{ printf "%.7s" $labels.commit }}'
+          description: "{{ $labels.url }}"
+
+      # O job do deploy tem timeout de 40 min.
+      - alert: DeployDevTravado
+        expr: github_deploy_run{job="deploy", status!="completed"}
+        for: 45m
+        labels: { severity: warning, area: deploy }
+        annotations:
+          titulo: Deploy de dev parado
+          summary: "Run #{{ $value }} em {{ $labels.status }} ha mais de 45 min"
+          description: "{{ $labels.url }}"
+
+      - alert: ConsultaDoDeployFalhando
+        expr: up{job="deploy"} == 0
+        for: 30m
+        labels: { severity: warning, area: deploy }
+        annotations:
+          titulo: Sem noticia dos deploys de dev
+          summary: A API do GitHub nao respondeu por 30 min
+          description: >-
+            Sem token, o limite e de 60 consultas por hora para o IP desta
+            maquina, somando outros programas. Os deploys podem falhar sem aviso.
+
+  - name: backup
+    rules:
+      - alert: BackupDevFalhou
+        expr: backup_ok{env="dev"} == 0
+        labels: { severity: warning, area: backup }
+        annotations:
+          titulo: Backup automatico do dev falhou
+          summary: A ultima tentativa falhou; o cron tenta de novo na proxima hora
+          description: Veja backups/backup.log.
+
+      # O cron roda de hora em hora e faz o backup quando passou um dia.
+      - alert: BackupDevAtrasado
+        expr: time() - backup_ultimo_ok_timestamp_seconds{env="dev"} > 26 * 3600
+        for: 90m
+        labels: { severity: warning, area: backup }
+        annotations:
+          titulo: Backup do dev atrasado
+          summary: "Ultimo backup conferido ha {{ $value | humanizeDuration }}"
+          description: Confira o crontab (make backup-schedule) e backups/backup.log.
+
+  - name: monitoramento
+    rules:
+      - alert: SemInternet
+        expr: probe_success{job="internet"} == 0
+        for: 3m
+        labels: { severity: warning, area: monitoramento }
+        annotations:
+          titulo: Esta maquina esta sem internet
+          summary: Os alertas de site, Supabase e deploy ficam calados ate voltar
+
+      - alert: ComponenteDosAlertasFora
+        expr: up{job=~"alertas|backup"} == 0
+        for: 5m
+        labels: { severity: warning, area: monitoramento }
+        annotations:
+          titulo: Parte do monitoramento fora
+          summary: "{{ $labels.alvo }} nao responde ha 5 min"
+          description: "Rode make alerts-status. Sem ele, alertas podem nao disparar."

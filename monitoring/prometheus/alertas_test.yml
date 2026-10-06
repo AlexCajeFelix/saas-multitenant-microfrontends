@@ -1,0 +1,348 @@
+# Testes das regras de alertas.yml: promtool test rules (make alerts-check).
+# Cada caso confere quando o alerta dispara, quando ainda nao, e o texto que
+# chega na notificacao.
+rule_files:
+  - alertas.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: site fora so depois de 5 min falhando
+    interval: 1m
+    input_series:
+      - series: 'probe_success{job="site", instance="crm", url="https://dev.example/crm/funil"}'
+        values: "1 1 0x10"
+      - series: 'probe_success{job="site", instance="shell", url="https://dev.example/"}'
+        values: "1x12"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: SiteDevFora
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: SiteDevFora
+        exp_alerts:
+          - exp_labels:
+              {
+                severity: critical,
+                area: site,
+                job: site,
+                instance: crm,
+                url: "https://dev.example/crm/funil",
+              }
+            exp_annotations:
+              titulo: Site de dev fora do ar
+              summary: "crm: https://dev.example/crm/funil"
+              description: >-
+                Falhando ha 5 min. Sem o bundle certo, o rewrite do shell para a
+                zona pode ter quebrado; sem resposta, olhe o deploy na Vercel.
+
+  - name: projeto supabase inteiro fora
+    interval: 1m
+    input_series:
+      - series: 'probe_success{job="supabase-api", instance="auth", url="https://ref.supabase.co/auth/v1/health"}'
+        values: "0x10"
+      - series: 'probe_success{job="supabase-api", instance="rest", url="https://ref.supabase.co/rest/v1/rpc/schema_version"}'
+        values: "0x10"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SupabaseDevFora
+        exp_alerts:
+          - exp_labels: { severity: critical, area: supabase }
+            exp_annotations:
+              titulo: Projeto Supabase de dev fora do ar
+              summary: Auth e banco (PostgREST) sem resposta ha 5 min
+              description: >-
+                Se o projeto ficou 7 dias sem uso, o plano free o pausou: reative
+                no dashboard (leva ~3 min). Os demais alertas do Supabase ficam
+                calados enquanto este durar.
+
+  - name: so o auth fora nao e o projeto fora
+    interval: 1m
+    input_series:
+      - series: 'probe_success{job="supabase-api", instance="auth", url="https://ref.supabase.co/auth/v1/health"}'
+        values: "0x10"
+      - series: 'probe_success{job="supabase-api", instance="rest", url="https://ref.supabase.co/rest/v1/rpc/schema_version"}'
+        values: "1x10"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SupabaseDevFora
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: SupabaseApiDevFalhando
+        exp_alerts:
+          - exp_labels:
+              {
+                severity: warning,
+                area: supabase,
+                job: supabase-api,
+                instance: auth,
+                url: "https://ref.supabase.co/auth/v1/health",
+              }
+            exp_annotations:
+              titulo: API do Supabase de dev falhando
+              summary: "auth falhando ha 5 min (https://ref.supabase.co/auth/v1/health)"
+
+  - name: edge function fora
+    interval: 1m
+    input_series:
+      - series: 'probe_success{job="edge-functions", instance="crm"}'
+        values: "0x10"
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: EdgeFunctionDevFora
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: EdgeFunctionDevFora
+        exp_alerts:
+          - exp_labels: { severity: critical, area: supabase, job: edge-functions, instance: crm }
+            exp_annotations:
+              titulo: Edge Function de dev fora do ar
+              summary: "crm: /health falhando ha 8 min"
+              description: Veja os logs da funcao no dashboard do Supabase (Edge Functions > Logs).
+
+  - name: banco pelas metricas do supabase
+    interval: 1m
+    input_series:
+      - series: 'up{job="supabase-metrics", instance="ref.supabase.co:443"}'
+        values: "0x12"
+      - series: 'pg_up{job="supabase-metrics"}'
+        values: "0x12"
+      - series: 'pg_settings_default_transaction_read_only{job="supabase-metrics"}'
+        values: "0 1x40"
+      - series: 'pg_database_size_mb{job="supabase-metrics", datname="postgres"}'
+        values: "420x40"
+      - series: 'node_filesystem_avail_bytes{job="supabase-metrics", mountpoint="/data", device="/dev/nvme1n1"}'
+        values: "100x40"
+      - series: 'node_filesystem_size_bytes{job="supabase-metrics", mountpoint="/data", device="/dev/nvme1n1"}'
+        values: "1000x40"
+      - series: 'pg_stat_database_num_backends{job="supabase-metrics", datname="postgres"}'
+        values: "50x40"
+      - series: 'pg_settings_max_connections{job="supabase-metrics"}'
+        values: "60x40"
+      - series: 'node_cpu_seconds_total{job="supabase-metrics", mode="idle", cpu="0"}'
+        values: "0+1x40"
+      - series: 'node_memory_MemAvailable_bytes{job="supabase-metrics"}'
+        values: "40x40"
+      - series: 'node_memory_MemTotal_bytes{job="supabase-metrics"}'
+        values: "1000x40"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: MetricasDoBancoSemAcesso
+        exp_alerts:
+          - exp_labels:
+              {
+                severity: warning,
+                area: supabase,
+                job: supabase-metrics,
+                instance: "ref.supabase.co:443",
+              }
+            exp_annotations:
+              titulo: Metricas do banco de dev sem acesso
+              summary: A Metrics API do Supabase recusou ou nao respondeu por 10 min
+              description: >-
+                Se a chave secreta foi trocada ou revogada, grave a nova com
+                `make alerts-key`. Sem metricas, os alertas de banco nao disparam.
+      - eval_time: 5m
+        alertname: BancoDevFora
+        exp_alerts:
+          - exp_labels: { severity: critical, area: supabase, job: supabase-metrics }
+            exp_annotations:
+              titulo: Postgres de dev fora do ar
+              summary: O Supabase informa o Postgres de dev parado ha 5 min
+      - eval_time: 2m
+        alertname: BancoDevSomenteLeitura
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: BancoDevSomenteLeitura
+        exp_alerts:
+          - exp_labels: { severity: critical, area: supabase, job: supabase-metrics }
+            exp_annotations:
+              titulo: Banco de dev em modo somente leitura
+              summary: Toda escrita no banco de dev esta sendo recusada
+              description: >-
+                O Supabase faz isso quando o disco passa de 95%. Libere espaco ou
+                aumente o disco no dashboard.
+      - eval_time: 29m
+        alertname: BancoDevPertoDoLimite
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: BancoDevPertoDoLimite
+        exp_alerts:
+          - exp_labels: { severity: warning, area: supabase }
+            exp_annotations:
+              titulo: Banco de dev perto do limite do plano free
+              summary: 420 MB de 500 MB
+      - eval_time: 30m
+        alertname: DiscoDevQuaseCheio
+        exp_alerts:
+          - exp_labels:
+              {
+                severity: warning,
+                area: supabase,
+                job: supabase-metrics,
+                mountpoint: /data,
+                device: /dev/nvme1n1,
+              }
+            exp_annotations:
+              titulo: Disco do banco de dev quase cheio
+              summary: 90% do disco do banco em uso
+              description: Aos 95% o Supabase poe o banco em modo somente leitura.
+      - eval_time: 10m
+        alertname: ConexoesDevAltas
+        exp_alerts:
+          - exp_labels: { severity: warning, area: supabase }
+            exp_annotations:
+              titulo: Conexoes do banco de dev perto do maximo
+              summary: 83.33% das conexoes em uso ha 10 min
+              description: Perto de 100%, novas conexoes sao recusadas.
+      - eval_time: 20m
+        alertname: CpuDevAlta
+        exp_alerts:
+          - exp_labels: { severity: warning, area: supabase }
+            exp_annotations:
+              titulo: CPU do banco de dev alta
+              summary: CPU em 98.33% ha 15 min
+      - eval_time: 15m
+        alertname: MemoriaDevAlta
+        exp_alerts:
+          - exp_labels: { severity: warning, area: supabase, job: supabase-metrics }
+            exp_annotations:
+              titulo: Memoria do banco de dev no limite
+              summary: Memoria em 96% ha 15 min
+
+  - name: deploy que falhou alerta na hora, o que deu certo nao
+    interval: 1m
+    input_series:
+      - series: >-
+          github_deploy_run{job="deploy", status="completed", conclusion="failure",
+          commit="0123456789abcdef", url="https://github.com/o/r/actions/runs/1"}
+        values: "14x5"
+      - series: >-
+          github_deploy_run{job="deploy", status="completed", conclusion="cancelled",
+          commit="fedcba9876543210", url="https://github.com/o/r/actions/runs/2"}
+        values: "15x5"
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: DeployDevFalhou
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              area: deploy
+              job: deploy
+              status: completed
+              conclusion: failure
+              commit: "0123456789abcdef"
+              url: "https://github.com/o/r/actions/runs/1"
+            exp_annotations:
+              titulo: Deploy de dev falhou
+              summary: "Run #14 (failure), commit 0123456"
+              description: "https://github.com/o/r/actions/runs/1"
+
+  - name: deploy parado
+    interval: 1m
+    input_series:
+      - series: 'github_deploy_run{job="deploy", status="in_progress", commit="abc", url="https://github.com/o/r/actions/runs/3"}'
+        values: "16x60"
+      - series: 'up{job="deploy", instance="github"}'
+        values: "0x40"
+    alert_rule_test:
+      - eval_time: 44m
+        alertname: DeployDevTravado
+        exp_alerts: []
+      - eval_time: 45m
+        alertname: DeployDevTravado
+        exp_alerts:
+          - exp_labels:
+              {
+                severity: warning,
+                area: deploy,
+                job: deploy,
+                status: in_progress,
+                commit: abc,
+                url: "https://github.com/o/r/actions/runs/3",
+              }
+            exp_annotations:
+              titulo: Deploy de dev parado
+              summary: "Run #16 em in_progress ha mais de 45 min"
+              description: "https://github.com/o/r/actions/runs/3"
+      - eval_time: 30m
+        alertname: ConsultaDoDeployFalhando
+        exp_alerts:
+          - exp_labels: { severity: warning, area: deploy, job: deploy, instance: github }
+            exp_annotations:
+              titulo: Sem noticia dos deploys de dev
+              summary: A API do GitHub nao respondeu por 30 min
+              description: >-
+                Sem token, o limite e de 60 consultas por hora para o IP desta
+                maquina, somando outros programas. Os deploys podem falhar sem aviso.
+
+  - name: backup do dev, e so do dev
+    interval: 1m
+    input_series:
+      - series: 'backup_ok{job="backup", env="dev"}'
+        values: "1 0x5"
+      - series: 'backup_ok{job="backup", env="prod"}'
+        values: "0x5"
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: BackupDevFalhou
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: BackupDevFalhou
+        exp_alerts:
+          - exp_labels: { severity: warning, area: backup, job: backup, env: dev }
+            exp_annotations:
+              titulo: Backup automatico do dev falhou
+              summary: A ultima tentativa falhou; o cron tenta de novo na proxima hora
+              description: Veja backups/backup.log.
+
+  # time() comeca em 0 no teste: o backup "de 0" fica 26h velho as 26h.
+  - name: backup do dev atrasado
+    interval: 1m
+    input_series:
+      - series: 'backup_ultimo_ok_timestamp_seconds{job="backup", env="dev"}'
+        values: "0x1700"
+    alert_rule_test:
+      - eval_time: 27h
+        alertname: BackupDevAtrasado
+        exp_alerts: []
+      - eval_time: 28h
+        alertname: BackupDevAtrasado
+        exp_alerts:
+          - exp_labels: { severity: warning, area: backup, job: backup, env: dev }
+            exp_annotations:
+              titulo: Backup do dev atrasado
+              summary: Ultimo backup conferido ha 1d 4h 0m 0s
+              description: Confira o crontab (make backup-schedule) e backups/backup.log.
+
+  - name: monitoramento
+    interval: 1m
+    input_series:
+      - series: 'probe_success{job="internet", instance="internet"}'
+        values: "0x10"
+      - series: 'up{job="alertas", alvo="blackbox", instance="blackbox:9115"}'
+        values: "0x10"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: SemInternet
+        exp_alerts:
+          - exp_labels:
+              { severity: warning, area: monitoramento, job: internet, instance: internet }
+            exp_annotations:
+              titulo: Esta maquina esta sem internet
+              summary: Os alertas de site, Supabase e deploy ficam calados ate voltar
+      - eval_time: 5m
+        alertname: ComponenteDosAlertasFora
+        exp_alerts:
+          - exp_labels:
+              {
+                severity: warning,
+                area: monitoramento,
+                job: alertas,
+                alvo: blackbox,
+                instance: "blackbox:9115",
+              }
+            exp_annotations:
+              titulo: Parte do monitoramento fora
+              summary: blackbox nao responde ha 5 min
+              description: "Rode make alerts-status. Sem ele, alertas podem nao disparar."

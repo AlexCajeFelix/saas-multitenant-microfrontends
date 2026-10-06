@@ -22,6 +22,11 @@ case "${1:-}" in
     ;;
   off)
     if [[ -n "$current" ]]; then printf '%s\n' "$current" | crontab -; else crontab -r 2>/dev/null || true; fi
+    # Desligado de proposito nao e atraso: some do alerta de backup atrasado.
+    for env in dev prod; do
+      curl -fsS --max-time 3 -X DELETE "${ALERTS_PUSHGATEWAY:-http://127.0.0.1:9091}/metrics/job/backup/env/$env" \
+        > /dev/null 2>&1 || true
+    done
     echo "backup automatico desligado"
     ;;
   *)

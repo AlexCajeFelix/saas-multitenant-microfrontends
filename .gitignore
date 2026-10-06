@@ -8,6 +8,7 @@
 !.env.example
 !.env.local.example
 !.env.backup.example
+!.env.alerts.example
 *.pem
 *.key
 supabase/.env
@@ -38,6 +39,10 @@ volumes/
 
 # Dumps do banco (scripts/backup): dados reais, nunca no git
 backups/
+
+# Alertas (scripts/alerts/up.sh): alvos com a chave publishable e a chave secreta
+monitoring/targets/
+monitoring/secrets/
 
 # Sistema e editores
 .DS_Store

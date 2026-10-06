@@ -18,8 +18,10 @@ O backend esta em `supabase/functions/`, um diretorio por modulo. O frontend
 esta em `apps/` (uma zona por modulo, mais o shell) e `packages/platform` (o
 nucleo compartilhado). O [guia do frontend](docs/frontend.md) explica como ele
 fala com a API, o [guia de deploy](docs/deploy.md) cobre micro frontends,
-ambientes, pipeline, drift e health check, e o [guia de backup](docs/backup.md)
-cobre o dump local dos bancos do Supabase e o restore.
+ambientes, pipeline, drift e health check, o [guia de backup](docs/backup.md)
+cobre o dump local dos bancos do Supabase e o restore, e o
+[guia de alertas](docs/alertas.md) cobre os alertas do ambiente dev, que rodam
+nesta maquina e chegam no desktop.
 
 | Ambiente | Branch | Supabase |
 |---|---|---|
@@ -59,7 +61,9 @@ make quality    # prettier, eslint, tsc e knip, igual ao CI
 `check`, `restart-functions`, `web-env`, e os de backup dos projetos na nuvem:
 `backup`, `backups`, `restore`, `backup-schedule` e os do bucket,
 `bucket-list`, `bucket-pull` e `bucket-push` (veja o
-[guia de backup](docs/backup.md)).
+[guia de backup](docs/backup.md)), e os de alertas do dev: `alerts-up`,
+`alerts-test`, `alerts-status`, `alerts-key`, `alerts-down` e `alerts-check`
+(veja o [guia de alertas](docs/alertas.md)).
 
 Usuarios criados por `make seed`, todos com a senha `Password123!`:
 
