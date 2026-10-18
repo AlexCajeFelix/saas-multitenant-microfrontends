@@ -2,10 +2,8 @@
 # Backup diario do banco de dev no Amazon S3, numa fila dos 30 mais recentes:
 # entra um por dia, sai o mais antigo (scripts/backup/s3.sh).
 #
-# O agendamento do GitHub so roda a partir da branch padrao (main), mas os
-# scripts de backup vivem na develop. Por isso este arquivo fica nas duas
-# branches e sempre roda o codigo da develop. Para rodar na hora:
-# Actions > Backup S3 > Run workflow.
+# O agendamento do GitHub so roda a partir da branch padrao, que e a develop.
+# Para rodar na hora: Actions > Backup S3 > Run workflow.
 #
 # Credencial da AWS: o usuario IAM github-backup-s3, que so lista, le, grava e
 # apaga dentro de s3://<S3_BUCKET>/<S3_PREFIX>/. E uma chave de acesso, e nao
@@ -34,8 +32,6 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: develop
 
       - name: Dump do dev e upload para o S3
         env:

@@ -151,11 +151,10 @@ A fila e por quantidade, no script, e nao uma regra de expiracao por idade no
 bucket. Se o job parar (projeto pausado pelo plano free, credencial vencida), os
 30 ultimos continuam la; uma regra "apagar depois de 30 dias" apagaria todos.
 
-O agendamento do GitHub so roda a partir da branch padrao (`main`), mas os
-scripts vivem na `develop`: o arquivo do workflow fica nas duas e sempre roda o
-codigo da `develop`. Para rodar na hora: Actions > Backup S3 > Run workflow. Em
-repositorio publico o GitHub desliga agendamentos depois de 60 dias sem commit
-(e avisa por e-mail); reative em Actions > Backup S3.
+O GitHub so agenda a partir da branch padrao do repositorio, por isso ela e a
+`develop` (onde todo PR comeca). Para rodar na hora: Actions > Backup S3 > Run
+workflow. Em repositorio publico o GitHub desliga agendamentos depois de 60
+dias sem commit (e avisa por e-mail); reative em Actions > Backup S3.
 
 ### Bucket e credencial
 
