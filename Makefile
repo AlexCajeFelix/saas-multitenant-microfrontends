@@ -4,7 +4,7 @@ COMPOSE := docker compose
 .DEFAULT_GOAL := help
 
 help: ## Lista os alvos disponiveis
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 keys: ## Cria o .env (se faltar) e gera ANON_KEY / SERVICE_ROLE_KEY
 	@node scripts/generate-keys.mjs .env
@@ -36,6 +36,12 @@ migrate: ## Reaplica as migrations
 
 seed: ## Cria os usuarios de demonstracao e popula os dois tenants
 	@bash scripts/seed.sh
+
+seed-volume: ## Popula o tenant "carga" com ~100 mil registros (N=...), para ensaiar backup e restore
+	@bash scripts/seed-volume.sh $(or $(N),100000)
+
+fingerprint: ## Linhas e md5 de cada tabela do banco local, para comparar antes e depois de um restore
+	@bash scripts/db-fingerprint.sh
 
 logs: ## Segue os logs das Edge Functions
 	@$(COMPOSE) logs -f functions
@@ -93,6 +99,15 @@ bucket-push: ## Sobe um backup local para o bucket: make bucket-push ENV=dev FRO
 bucket-pull: ## Baixa um backup do bucket para backups/<env>/: make bucket-pull ENV=dev FROM=<backup|data|latest>
 	@bash scripts/backup/bucket.sh pull $(or $(ENV),dev) $(or $(FROM),latest)
 
+s3-list: ## Lista a fila dos 30 backups no S3 da AWS (ENV=dev|prod)
+	@bash scripts/backup/s3.sh list $(or $(ENV),dev)
+
+s3-push: ## Sobe um backup local para o S3: make s3-push ENV=dev FROM=<backup|data|latest>
+	@bash scripts/backup/s3.sh push $(or $(ENV),dev) $(or $(FROM),latest)
+
+s3-pull: ## Baixa um backup do S3 para backups/<env>/: make s3-pull ENV=dev FROM=<backup|data|latest>
+	@bash scripts/backup/s3.sh pull $(or $(ENV),dev) $(or $(FROM),latest)
+
 alerts-up: ## Sobe os alertas do ambiente dev nesta maquina (ntfy em http://localhost:8090/alertas-dev)
 	@bash scripts/alerts/up.sh
 
@@ -114,4 +129,4 @@ alerts-check: ## Valida a configuracao e roda os testes das regras de alerta
 restart-functions: ## Recarrega o runtime das Edge Functions
 	@$(COMPOSE) restart functions
 
-.PHONY: help keys up down reset migrate seed logs ps psql test check smoke backup backups restore backup-schedule backup-unschedule bucket-list bucket-push bucket-pull alerts-up alerts-down alerts-key alerts-test alerts-status alerts-check restart-functions web web-env web-build quality
+.PHONY: help keys up down reset migrate seed seed-volume fingerprint logs ps psql test check smoke backup backups restore backup-schedule backup-unschedule bucket-list bucket-push bucket-pull s3-list s3-push s3-pull alerts-up alerts-down alerts-key alerts-test alerts-status alerts-check restart-functions web web-env web-build quality

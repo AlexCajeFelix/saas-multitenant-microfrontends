@@ -6,7 +6,8 @@ os ultimos 7 dias. Este guia cobre o equivalente local e de graca: um
 ultimos guardados, e um restore que devolve o banco a qualquer um deles,
 conferido tabela por tabela. O Postgres 17 roda em Docker. Alem disso, todo
 deploy de dev guarda uma copia num bucket privado do Storage do projeto
-([No bucket](#no-bucket-deploy-de-dev)).
+([No bucket](#no-bucket-deploy-de-dev)), e todo dia o GitHub Actions guarda
+outra no Amazon S3, numa fila dos 30 ultimos ([No S3](#no-s3-diario-fila-de-30)).
 
 ```bash
 make backup-schedule                       # liga o backup automatico diario (crontab)
@@ -18,6 +19,9 @@ make backup ENV=prod                       # backup manual, na hora
 make bucket-list ENV=dev                   # backups no bucket do projeto
 make bucket-pull ENV=dev FROM=latest       # baixa do bucket (depois: make restore)
 make bucket-push ENV=dev FROM=latest       # sobe um backup local para o bucket
+make s3-list ENV=dev                       # a fila dos 30 backups no S3
+make s3-pull ENV=dev FROM=latest           # baixa do S3 (depois: make restore)
+make s3-push ENV=dev FROM=latest           # sobe um backup local para o S3
 ```
 
 homol e staging usam o banco de dev, entao os ambientes de backup sao so `dev`
@@ -133,6 +137,56 @@ numa pasta `backups/dev/<data>/` e rode o `make restore` com ela.
 O bucket mora no proprio projeto: cobre erro de migration, dado apagado e
 deploy ruim, mas some junto se o projeto for apagado. Para isso ficam as copias
 desta maquina.
+
+## No S3 (diario, fila de 30)
+
+O workflow `Backup S3` (`.github/workflows/backup-s3.yml`) roda todo dia as
+03:00 de Brasilia: faz o dump do dev (`db-backup.sh`), sobe a pasta para
+`s3://<S3_BUCKET>/<S3_PREFIX>/dev/<data UTC>/` e, so depois que o novo subiu
+inteiro, tira da fila os mais antigos alem dos 30 (`S3_KEEP`). Entra um por
+dia, sai o mais antigo: 30 itens sao 30 dias. Ele roda mesmo sem mudanca no
+banco, justamente para a fila ser de dias.
+
+A fila e por quantidade, no script, e nao uma regra de expiracao por idade no
+bucket. Se o job parar (projeto pausado pelo plano free, credencial vencida), os
+30 ultimos continuam la; uma regra "apagar depois de 30 dias" apagaria todos.
+
+O GitHub so agenda a partir da branch padrao do repositorio, por isso ela e a
+`develop` (onde todo PR comeca). Para rodar na hora: Actions > Backup S3 > Run
+workflow. Em repositorio publico o GitHub desliga agendamentos depois de 60
+dias sem commit (e avisa por e-mail); reative em Actions > Backup S3.
+
+### Bucket e credencial
+
+O bucket e privado, com versionamento e duas regras de ciclo de vida. A
+`fila-limpeza` (prefixo `onde-fica-o-backup/`) apaga de vez, 7 dias depois, as
+versoes antigas que a fila deixa ao remover um backup, e uploads incompletos
+depois de 1 dia. Sem ela, com o versionamento, nada sairia de verdade.
+
+A conta AWS faz parte de uma organizacao cuja SCP bloqueia provedores OIDC no
+IAM, entao o GitHub usa uma chave de acesso do usuario IAM `github-backup-s3`,
+nos secrets `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY`. A politica dele
+(inline, `backup-s3-onde-fica-o-backup`) so permite listar, ler, gravar e apagar
+dentro de `<S3_BUCKET>/onde-fica-o-backup/`: nada mais no bucket nem na conta.
+Como nao tem `s3:DeleteObjectVersion`, uma chave vazada nao destroi backups de
+vez: o apagado vira versao antiga por 7 dias. As variaveis do repositorio
+`S3_BUCKET`, `S3_PREFIX` e `AWS_REGION` (`us-east-2`, a regiao que a SCP
+permite) completam a configuracao.
+
+Para trocar a chave: crie uma nova no IAM (`github-backup-s3` > Security
+credentials), atualize os dois secrets, rode o workflow na mao e apague a
+antiga.
+
+Na maquina, os `make s3-*` usam `S3_BUCKET` e o perfil da AWS CLI do
+`.env.backup` (`AWS_PROFILE`, depois de `aws login --profile <perfil>`).
+
+### Restaurar do S3
+
+```bash
+make s3-list ENV=dev
+make s3-pull ENV=dev FROM=2026-10-18     # baixa para backups/dev/<data>/ e confere o SHA256
+make restore ENV=dev FROM=2026-10-18
+```
 
 ## O que entra no backup
 

@@ -74,6 +74,13 @@ Usuarios criados por `make seed`, todos com a senha `Password123!`:
 | carla@globex.test | owner | globex |
 | diego@globex.test | member | globex |
 
+Para ensaiar backup e restore com volume, `make seed-volume` cria o tenant
+`carga` ("Carga de Volume") com 100 mil registros no CRM e em projetos, com a
+alice de dona (`make seed-volume N=...` muda o total; roda de novo sem
+duplicar). `make fingerprint` mostra as linhas e o md5 de cada tabela do banco
+local: tire uma foto antes do backup e outra depois do restore, e o `diff` das
+duas prova que voltou tudo.
+
 ### Uma primeira chamada
 
 ```bash

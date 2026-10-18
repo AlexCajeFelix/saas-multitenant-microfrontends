@@ -1,0 +1,46 @@
+# ===========================================================================
+# Backup diario do banco de dev no Amazon S3, numa fila dos 30 mais recentes:
+# entra um por dia, sai o mais antigo (scripts/backup/s3.sh).
+#
+# O agendamento do GitHub so roda a partir da branch padrao, que e a develop.
+# Para rodar na hora: Actions > Backup S3 > Run workflow.
+#
+# Credencial da AWS: o usuario IAM github-backup-s3, que so lista, le, grava e
+# apaga dentro de s3://<S3_BUCKET>/<S3_PREFIX>/. E uma chave de acesso, e nao
+# OIDC, porque a organizacao AWS da conta bloqueia provedores OIDC no IAM.
+# Veja docs/backup.md.
+# ===========================================================================
+name: Backup S3
+
+on:
+  schedule:
+    # 06:00 UTC = 03:00 em Brasilia, fora do horario de uso.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-s3
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: backup (dev -> S3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Dump do dev e upload para o S3
+        env:
+          SUPABASE_REF_DEV: ${{ vars.SUPABASE_REF_DEV }}
+          SUPABASE_DB_PASSWORD_DEV: ${{ secrets.SUPABASE_DB_PASSWORD_DEV }}
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_PREFIX: ${{ vars.S3_PREFIX }}
+          S3_KEEP: "30"
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: scripts/backup/s3.sh backup dev
